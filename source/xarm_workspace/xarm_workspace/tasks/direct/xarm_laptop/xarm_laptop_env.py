@@ -133,6 +133,7 @@ class XarmLaptopEnv(DirectRLEnv):
         # self.left_finger_link_idx = self._robot.find_bodies("left_finger")[0][0]
         # self.right_finger_link_idx = self._robot.find_bodies("right_finger")[0][0]
         self.lid_link_idx = self._laptop.find_bodies("lid_link")[0][0]
+        self.base_link_idx = self._laptop.find_bodies("base_link")[0][0]
         self.hinge_joint_idx = self._laptop.find_joints("hinge_joint")[0][0]
 
         self.robot_grasp_rot = torch.zeros((self.num_envs, 4), device=self.device)
@@ -177,7 +178,9 @@ class XarmLaptopEnv(DirectRLEnv):
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         hinge_pos = self._laptop.data.joint_pos.torch[:, self.hinge_joint_idx]
-        terminated = hinge_pos <= self.cfg.success_lid_angle_threshold
+        success = hinge_pos <= self.cfg.success_lid_angle_threshold
+        too_early = self.episode_length_buf < 30
+        terminated = success & ~too_early
         truncated = self.episode_length_buf >= self.max_episode_length - 1
         return terminated, truncated
 
@@ -185,11 +188,9 @@ class XarmLaptopEnv(DirectRLEnv):
         self._compute_intermediate_values()
 
         hinge_pos = self._laptop.data.joint_pos.torch[:, self.hinge_joint_idx]
+        hinge_vel = self._laptop.data.joint_vel.torch[:, self.hinge_joint_idx]
         hinge_error = torch.abs(hinge_pos - self.cfg.target_lid_angle)
 
-        # robot_left_finger_pos = self._robot.data.body_pos_w.torch[:, self.left_finger_link_idx]
-        # robot_right_finger_pos = self._robot.data.body_pos_w.torch[:, self.right_finger_link_idx]
-        
         d = torch.linalg.norm(self.robot_grasp_pos - self.lid_push_pos, dim=-1)
         reach_reward = 1.0 / (1.0 + d * d)
         reach_reward = reach_reward * reach_reward
@@ -203,11 +204,18 @@ class XarmLaptopEnv(DirectRLEnv):
             torch.zeros_like(hinge_pos),
         )
 
+        moving_closed_reward = torch.where(
+            hinge_vel < 0.0,
+            -hinge_vel,
+            torch.zeros_like(hinge_vel),
+        )
+
         total_reward = (
             self.cfg.reach_reward_scale * reach_reward
             + self.cfg.close_reward_scale * close_reward
+            + self.cfg.close_vel_reward_scale * moving_closed_reward
             - self.cfg.action_penalty_scale * action_penalty
-            + 5.0 * success_bonus
+            + self.cfg.success_bonus_scale * success_bonus
         )
 
         self._episode_succeeded |= hinge_pos <= self.cfg.success_lid_angle_threshold
@@ -215,10 +223,12 @@ class XarmLaptopEnv(DirectRLEnv):
         self.extras["log"] = {
             "hinge_pos": hinge_pos.mean(),
             "hinge_error": hinge_error.mean(),
+            "hinge_vel": hinge_vel.mean(),
             "reach_reward": (self.cfg.reach_reward_scale * reach_reward).mean(),
             "close_reward": (self.cfg.close_reward_scale * close_reward).mean(),
+            "close_vel_reward": (self.cfg.close_vel_reward_scale * moving_closed_reward).mean(),
             "action_penalty": (-self.cfg.action_penalty_scale * action_penalty).mean(),
-            "success_bonus": (5.0 * success_bonus).mean(),
+            "success_bonus": (self.cfg.success_bonus_scale * success_bonus).mean(),
             "total_reward": total_reward.mean(),
         }
 
@@ -258,6 +268,14 @@ class XarmLaptopEnv(DirectRLEnv):
         self._robot.set_joint_position_target(joint_pos, joint_ids=self.control_joint_ids, env_ids=env_ids)
         self._robot.write_joint_position_to_sim(position=joint_pos, joint_ids=self.control_joint_ids, env_ids=env_ids)
         self._robot.write_joint_velocity_to_sim(velocity=joint_vel, joint_ids=self.control_joint_ids, env_ids=env_ids)
+
+        # restore laptop base to original pose
+        laptop_root_pose = self._laptop.data.default_root_state.torch[env_ids, :7].clone()
+        laptop_root_vel = torch.zeros_like(self._laptop.data.default_root_state.torch[env_ids, 7:])
+        base_link_pos = self._laptop.data.body_pos_w.torch[:, self.base_link_idx]
+
+        self._laptop.write_root_pose_to_sim(laptop_root_pose, env_ids=env_ids)
+        self._laptop.write_root_velocity_to_sim(laptop_root_vel, env_ids=env_ids)
 
         # laptop state
         laptop_joint_pos = torch.full(

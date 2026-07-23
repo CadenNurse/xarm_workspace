@@ -19,7 +19,7 @@ from isaaclab.utils.configclass import configclass
 @configclass
 class XarmLaptopEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 8.3333  # 500 timesteps
+    episode_length_s = 5.3333  # 500 timesteps
     decimation = 2
     action_space = 8
     observation_space = 31
@@ -68,7 +68,7 @@ class XarmLaptopEnvCfg(DirectRLEnvCfg):
                 "joint7": 0.0,
                 "drive_joint": 0.0,
             },
-            pos=(0.4, 0.0, 0.0),
+            pos=(0.6, 0.0, 0.0),
             rot=(0.0, 0.0, 1.0, 0.0),
         ),
         actuators={
@@ -103,15 +103,16 @@ class XarmLaptopEnvCfg(DirectRLEnvCfg):
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.0, 0.0, 0.0),
             rot=(0.0, 0.0, 0.0, 1.0),
-            joint_pos={"hinge_joint": 0.785},
+            joint_pos={"hinge_joint": 0.70},
         ),
         actuators={
-            # "hinge": ImplicitActuatorCfg(
-            #     joint_names_expr=["hinge_joint"],
-            #     effort_limit_sim=87.0,
-            #     stiffness=200.0,
-            #     damping=20.0,
-            # ),
+            "hinge": ImplicitActuatorCfg(
+                joint_names_expr=["hinge_joint"],
+                effort_limit_sim=10.0,
+                stiffness=0.0,
+                damping=0.05,
+                friction=1.0,
+            ),
         },
     )
 
@@ -133,13 +134,14 @@ class XarmLaptopEnvCfg(DirectRLEnvCfg):
     dof_velocity_scale = 0.1
 
     # reward scales
-    reach_reward_scale = 2.0
-    close_reward_scale = 12.0
-    action_penalty_scale = 0.05
+    reach_reward_scale = 1.0
+    close_reward_scale = 18.0
+    action_penalty_scale = 0.02
     laptop_move_penalty_scale = 2.0
     laptop_tilt_penalty_scale = 1.0
     laptop_base_pos_penalty_scale = 4.0
-    success_bonus_scale = 5.0
+    success_bonus_scale = 10.0
+    close_vel_reward_scale = 2.0
 
     target_lid_angle = 0.10
     start_lid_angle = 0.60
