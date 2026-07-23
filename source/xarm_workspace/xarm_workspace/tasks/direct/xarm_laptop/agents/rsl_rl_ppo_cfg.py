@@ -13,7 +13,7 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 16
     max_iterations = 150
     save_interval = 50
-    experiment_name = "cartpole_direct"
+    experiment_name = "xarm_laptop_direct"
     actor = RslRlMLPModelCfg(
         hidden_dims=[32, 32],
         activation="elu",
