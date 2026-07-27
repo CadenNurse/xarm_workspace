@@ -13,6 +13,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils.configclass import configclass
+from isaaclab.sensors import ContactSensorCfg
 
 
 @configclass
@@ -132,6 +133,7 @@ class XarmPickPlaceEnvCfg(DirectRLEnvCfg):
         prim_path="/World/envs/env_.*/Workstation",
         spawn=sim_utils.UsdFileCfg(
             usd_path=f"/home/cadennurse/Documents/isaac_lab_test/workstation.usd",
+            usd_path=f"/home/cadennurse/Documents/isaac_lab_test/workstation.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True,
             ),
@@ -141,6 +143,85 @@ class XarmPickPlaceEnvCfg(DirectRLEnvCfg):
             rot=(0.0, 0.0, 0.0, 1.0),
         ),
     )
+
+    # contact sensors
+    # link2_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link2",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # link3_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link3",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # link4_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link4",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # link5_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link5",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # link6_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link6",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # link7_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link7",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # gripper_base_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/gripper/xarm_gripper_base_link",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # right_outer_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/gripper/right_outer_knuckle",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # left_outer_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/gripper/left_outer_knuckle",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # right_finger_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/gripper/right_finger",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # left_finger_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/gripper/left_finger",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
 
     # ground plane
     terrain = TerrainImporterCfg(

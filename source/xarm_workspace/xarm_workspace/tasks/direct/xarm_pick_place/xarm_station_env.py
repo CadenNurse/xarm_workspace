@@ -211,47 +211,6 @@ class XarmStationEnv(DirectRLEnv):
         overshoot = torch.clamp(self.cfg.target_lid_angle - hinge_pos, min=0.0)
         overshoot_penalty = overshoot * overshoot
 
-        # # hinge movement rewards
-        # hinge_pos = self._laptop.data.joint_pos.torch[:, self.hinge_joint_idx]
-        # hinge_progress = self.prev_hinge_pos - hinge_pos   # positive if closing
-        # progress_reward = torch.clamp(hinge_progress, min=0.0)
-        # self.prev_hinge_pos[:] = hinge_pos
-
-        # finger reward, body penalty
-        lfinger_pos = self._robot.data.body_pos_w.torch[:, self.left_finger_link_idx]
-        rfinger_pos = self._robot.data.body_pos_w.torch[:, self.right_finger_link_idx]
-
-        lfinger_dist = torch.linalg.norm(lfinger_pos - self.lid_push_pos, dim=-1)
-        rfinger_dist = torch.linalg.norm(rfinger_pos - self.lid_push_pos, dim=-1)
-        finger_mid_pos = 0.5 * (lfinger_pos + rfinger_pos)
-        finger_mid_dist = torch.linalg.norm(finger_mid_pos - self.lid_push_pos, dim=-1)
-
-        finger_reach_reward = 1.0 / (1.0 + finger_mid_dist * finger_mid_dist)
-        finger_reach_reward = finger_reach_reward * finger_reach_reward
-
-        fingers_near_lid = ((lfinger_dist < 0.05) & (rfinger_dist < 0.05)).float()
-        finger_close_bonus = fingers_near_lid * torch.clamp(-hinge_vel, min=0.0)
-
-        body_push_penalty = (
-            (d < 0.05) &
-            ((lfinger_dist > 0.07) | (rfinger_dist > 0.07))
-        ).float()
-
-        # contact penalty
-        # workstation_hit = (
-        #     self._sensor_hit("link2_contact")
-        #     | self._sensor_hit("link3_contact")
-        #     | self._sensor_hit("link4_contact")
-        #     | self._sensor_hit("link5_contact")
-        #     | self._sensor_hit("link6_contact")
-        #     | self._sensor_hit("link7_contact")
-        #     | self._sensor_hit("gripper_base_contact")
-        #     | self._sensor_hit("right_outer_contact")
-        #     | self._sensor_hit("left_outer_contact")
-        #     | self._sensor_hit("right_finger_contact")
-        #     | self._sensor_hit("left_finger_contact")
-        # ).float()
-
         success_bonus = torch.where(
             hinge_pos <= self.cfg.success_lid_angle_threshold,
             torch.ones_like(hinge_pos),
@@ -268,10 +227,6 @@ class XarmStationEnv(DirectRLEnv):
             self.cfg.reach_reward_scale * reach_reward
             + self.cfg.close_reward_scale * close_reward
             + self.cfg.close_vel_reward_scale * moving_closed_reward
-            + self.cfg.finger_reach_reward_scale * finger_reach_reward
-            + self.cfg.finger_close_bonus_scale * finger_close_bonus
-            # + self.cfg.progress_reward_scale * progress_reward
-            - self.cfg.body_push_penalty_scale * body_push_penalty
             - self.cfg.action_penalty_scale * action_penalty
             - self.cfg.fast_close_penalty_scale * fast_close_penalty
             - self.cfg.overshoot_penalty_scale * overshoot_penalty
