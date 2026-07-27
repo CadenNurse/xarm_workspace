@@ -71,16 +71,8 @@ class XarmStationEnv(DirectRLEnv):
 
         self.robot_dof_targets = torch.zeros((self.num_envs, len(self.control_joint_ids)), device=self.device)
 
-        stage = get_current_stage()
-        robot_prim = stage.GetPrimAtPath("/World/envs/env_0/Robot")
-
-        # print("robot prim valid:", robot_prim.IsValid())
-        # for prim in robot_prim.GetChildren():
-        #     print("child:", prim.GetPath())
-        #     for child in prim.GetChildren():
-        #         print("  subchild:", child.GetPath())
-        #         for gchild in child.GetChildren():
-        #             print("    gchild:", gchild.GetPath())
+        # collect previous hinge pos
+        # self.prev_hinge_pos = torch.zeros(self.num_envs, device=self.device)
 
         stage = get_current_stage()
         hand_pose = get_env_local_pose(
@@ -219,6 +211,12 @@ class XarmStationEnv(DirectRLEnv):
         overshoot = torch.clamp(self.cfg.target_lid_angle - hinge_pos, min=0.0)
         overshoot_penalty = overshoot * overshoot
 
+        # # hinge movement rewards
+        # hinge_pos = self._laptop.data.joint_pos.torch[:, self.hinge_joint_idx]
+        # hinge_progress = self.prev_hinge_pos - hinge_pos   # positive if closing
+        # progress_reward = torch.clamp(hinge_progress, min=0.0)
+        # self.prev_hinge_pos[:] = hinge_pos
+
         # finger reward, body penalty
         lfinger_pos = self._robot.data.body_pos_w.torch[:, self.left_finger_link_idx]
         rfinger_pos = self._robot.data.body_pos_w.torch[:, self.right_finger_link_idx]
@@ -272,6 +270,7 @@ class XarmStationEnv(DirectRLEnv):
             + self.cfg.close_vel_reward_scale * moving_closed_reward
             + self.cfg.finger_reach_reward_scale * finger_reach_reward
             + self.cfg.finger_close_bonus_scale * finger_close_bonus
+            # + self.cfg.progress_reward_scale * progress_reward
             - self.cfg.body_push_penalty_scale * body_push_penalty
             - self.cfg.action_penalty_scale * action_penalty
             - self.cfg.fast_close_penalty_scale * fast_close_penalty
@@ -289,6 +288,7 @@ class XarmStationEnv(DirectRLEnv):
             "reach_reward": (self.cfg.reach_reward_scale * reach_reward).mean(),
             "close_reward": (self.cfg.close_reward_scale * close_reward).mean(),
             "close_vel_reward": (self.cfg.close_vel_reward_scale * moving_closed_reward).mean(),
+            # "progress_reward": (+ self.cfg.progress_reward_scale * progress_reward).mean(),
             "fast_close_penalty": (-self.cfg.fast_close_penalty_scale * fast_close_penalty).mean(),
             "overshoot_penalty": (-self.cfg.overshoot_penalty_scale * overshoot_penalty).mean(),
             "action_penalty": (-self.cfg.action_penalty_scale * action_penalty).mean(),
@@ -354,6 +354,7 @@ class XarmStationEnv(DirectRLEnv):
         # laptop state
         laptop_joint_pos = self._laptop.data.default_joint_pos.torch[env_ids].clone()
         laptop_joint_vel = torch.zeros_like(laptop_joint_pos)
+        # self.prev_hinge_pos[env_ids] = self._laptop.data.default_joint_pos.torch[env_ids, self.hinge_joint_idx]
 
         # replace below if getting index issues
         # self._laptop.write_joint_position_to_sim(position=laptop_joint_pos, env_ids=env_ids)
@@ -372,12 +373,13 @@ class XarmStationEnv(DirectRLEnv):
             - 1.0
         )
         to_target = self.lid_push_pos - self.robot_grasp_pos
-
+        # lid_vel = self._laptop.data.body_lin_vel_w.torch[:, self.lid_link_idx]
         obs = torch.cat(
             (
                 dof_pos_scaled,
                 self._robot.data.joint_vel.torch * self.cfg.dof_velocity_scale,
                 to_target,
+                # lid_vel,
                 self._laptop.data.joint_pos.torch[:, self.hinge_joint_idx].unsqueeze(-1),
                 self._laptop.data.joint_vel.torch[:, self.hinge_joint_idx].unsqueeze(-1),
             ),

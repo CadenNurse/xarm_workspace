@@ -231,6 +231,7 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
     # reward scales
     reach_reward_scale = 1.0
     close_reward_scale = 12.0
+    progress_reward_scale = 4.0
     action_penalty_scale = 0.02
     success_bonus_scale = 18.0
     close_vel_reward_scale = 5.0
