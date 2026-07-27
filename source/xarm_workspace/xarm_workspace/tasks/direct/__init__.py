@@ -37,3 +37,12 @@ gym.register(
         "skrl_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_station.agents:skrl_ppo_cfg.yaml",
     },
 )
+gym.register(
+    id="Isaac-Xarm-Pick-Place-Direct-v0",
+    entry_point="xarm_workspace.tasks.direct.xarm_pick_place.xarm_pick_place_env:XarmPickPlaceEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_pick_place.xarm_pick_place_env_cfg:XarmPickPlaceEnvCfg",
+        "skrl_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_pick_place.agents:skrl_ppo_cfg.yaml",
+    },
+)
