@@ -340,8 +340,12 @@ class XarmStationEnv(DirectRLEnv):
         self._robot.write_joint_velocity_to_sim(velocity=joint_vel, joint_ids=self.control_joint_ids, env_ids=env_ids)
 
         # restore laptop base to original pose
-        laptop_root_pose = self._laptop.data.default_root_state.torch[env_ids, :7].clone()
-        laptop_root_pose[:, 0:3] += self.scene.env_origins[env_ids]
+        # laptop_root_pose = self._laptop.data.default_root_state.torch[env_ids, :7].clone()
+        # laptop_root_pose[:, 0:3] += self.scene.env_origins[env_ids]
+        # laptop_root_vel = torch.zeros_like(self._laptop.data.default_root_state.torch[env_ids, 7:])
+
+        # random laptop pose
+        laptop_root_pose = self._sample_laptop_root_pose(env_ids)
         laptop_root_vel = torch.zeros_like(self._laptop.data.default_root_state.torch[env_ids, 7:])
 
         self._laptop.write_root_pose_to_sim(laptop_root_pose, env_ids=env_ids)
@@ -414,87 +418,6 @@ class XarmStationEnv(DirectRLEnv):
             self.lid_local_push_pos[env_ids],
         )
 
-    # def _compute_rewards(
-    #     self,
-    #     actions,
-    #     laptop_dof_pos,
-    #     franka_grasp_pos,
-    #     lid_push_pos,
-    #     franka_grasp_rot,
-    #     lid_push_rot,
-    #     franka_lfinger_pos,
-    #     franka_rfinger_pos,
-    #     gripper_forward_axis,
-    #     lid_close_axis,
-    #     gripper_up_axis,
-    #     lid_up_axis,
-    #     num_envs,
-    #     dist_reward_scale,
-    #     rot_reward_scale,
-    #     open_reward_scale,
-    #     action_penalty_scale,
-    #     finger_reward_scale,
-    #     joint_positions,
-    # ):
-        # # distance from hand to the laptop
-        # d = torch.linalg.norm(franka_grasp_pos - lid_push_pos, ord=2, dim=-1)
-        # dist_reward = 1.0 / (1.0 + d**2)
-        # dist_reward *= dist_reward
-        # dist_reward = torch.where(d <= 0.02, dist_reward * 2, dist_reward)
-
-        # axis1 = quat_apply(franka_grasp_rot, gripper_forward_axis)
-        # axis2 = quat_apply(lid_push_rot, lid_close_axis)
-        # axis3 = quat_apply(franka_grasp_rot, gripper_up_axis)
-        # axis4 = quat_apply(lid_push_rot, lid_up_axis)
-
-        # dot1 = (
-        #     torch.bmm(axis1.view(num_envs, 1, 3), axis2.view(num_envs, 3, 1)).squeeze(-1).squeeze(-1)
-        # )  # alignment of forward axis for gripper
-        # dot2 = (
-        #     torch.bmm(axis3.view(num_envs, 1, 3), axis4.view(num_envs, 3, 1)).squeeze(-1).squeeze(-1)
-        # )  # alignment of up axis for gripper
-        # # reward for matching the orientation of the hand to the laptop (fingers wrapped)
-        # rot_reward = 0.5 * (torch.sign(dot1) * dot1**2 + torch.sign(dot2) * dot2**2)
-
-        # # regularization on the actions (summed for each environment)
-        # action_penalty = torch.sum(actions**2, dim=-1)
-
-        # # how far the laptop has been closed
-        # open_reward = laptop_dof_pos[:, self.hinge_joint_idx]  # laptop_hinge_joint
-
-        # # penalty for distance of each finger from the laptop lid
-        # lfinger_dist = franka_lfinger_pos[:, 2] - lid_push_pos[:, 2]
-        # rfinger_dist = lid_push_pos[:, 2] - franka_rfinger_pos[:, 2]
-        # finger_dist_penalty = torch.zeros_like(lfinger_dist)
-        # finger_dist_penalty += torch.where(lfinger_dist < 0, lfinger_dist, torch.zeros_like(lfinger_dist))
-        # finger_dist_penalty += torch.where(rfinger_dist < 0, rfinger_dist, torch.zeros_like(rfinger_dist))
-
-        # rewards = (
-        #     dist_reward_scale * dist_reward
-        #     + rot_reward_scale * rot_reward
-        #     + open_reward_scale * open_reward
-        #     + finger_reward_scale * finger_dist_penalty
-        #     - action_penalty_scale * action_penalty
-        # )
-
-        # self.extras["log"] = {
-        #     "dist_reward": (dist_reward_scale * dist_reward).mean(),
-        #     "rot_reward": (rot_reward_scale * rot_reward).mean(),
-        #     "open_reward": (open_reward_scale * open_reward).mean(),
-        #     "action_penalty": (-action_penalty_scale * action_penalty).mean(),
-        #     "left_finger_distance_reward": (finger_reward_scale * lfinger_dist).mean(),
-        #     "right_finger_distance_reward": (finger_reward_scale * rfinger_dist).mean(),
-        #     "finger_dist_penalty": (finger_reward_scale * finger_dist_penalty).mean(),
-        # }
-
-        # # bonus for closing laptop properly
-        # laptop_pos = laptop_dof_pos[:, self.hinge_joint_idx]
-        # rewards = torch.where(laptop_pos > 0.01, rewards + 0.25, rewards)
-        # rewards = torch.where(laptop_pos > 0.2, rewards + 0.25, rewards)
-        # rewards = torch.where(laptop_pos > 0.35, rewards + 0.25, rewards)
-
-        # return rewards
-
     def _compute_grasp_transforms(
         self,
         hand_rot,
@@ -514,3 +437,27 @@ class XarmStationEnv(DirectRLEnv):
         )
 
         return global_franka_rot, global_franka_pos, global_laptop_rot, global_laptop_pos
+    
+    def _sample_laptop_root_pose(self, env_ids: torch.Tensor) -> torch.Tensor:
+        pose = self._laptop.data.default_root_state.torch[env_ids, :7].clone()
+
+        # sample x/y inside your requested bounds
+        pose[:, 0] = sample_uniform(0.40, 0.60, (len(env_ids), 1), self.device).squeeze(-1)
+        pose[:, 1] = sample_uniform(0.30, 0.80, (len(env_ids), 1), self.device).squeeze(-1)
+
+        # keep the same height so it stays on the table
+        # pose[:, 2] unchanged
+
+        # random yaw only
+        yaw = sample_uniform(-torch.pi, torch.pi, (len(env_ids), 1), self.device).squeeze(-1)
+        half_yaw = 0.5 * yaw
+
+        # XYZW quaternion for pure z-rotation
+        pose[:, 3] = 0.0                    # qx
+        pose[:, 4] = 0.0                    # qy
+        pose[:, 5] = torch.sin(half_yaw)    # qz
+        pose[:, 6] = torch.cos(half_yaw)    # qw
+
+        # convert env-local to world coordinates
+        pose[:, 0:3] += self.scene.env_origins[env_ids]
+        return pose

@@ -12,7 +12,6 @@ from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
-# from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.configclass import configclass
 from isaaclab.sensors import ContactSensorCfg
 
@@ -20,7 +19,7 @@ from isaaclab.sensors import ContactSensorCfg
 @configclass
 class XarmStationEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 3.5  # 500 timesteps
+    episode_length_s = 4.0  # 500 timesteps
     decimation = 2
     action_space = 8
     observation_space = 31
@@ -41,7 +40,7 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
-        num_envs=64, env_spacing=3.0, replicate_physics=True, clone_in_fabric=True
+        num_envs=100, env_spacing=3.0, replicate_physics=True, clone_in_fabric=True
     )
 
     # robot
@@ -112,7 +111,7 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
                 effort_limit_sim=10.0,
                 stiffness=0.0,
                 damping=0.25,
-                friction=1.8,
+                friction=1.6,
             ),
         },
     )
@@ -237,7 +236,7 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
     close_vel_reward_scale = 5.0
     fast_close_penalty_scale = 3.0
     overshoot_penalty_scale = 8.0
-    workstation_contact_penalty_scale = 0.3
+    # workstation_contact_penalty_scale = 0.3
 
     finger_reach_reward_scale = 1.0
     finger_close_bonus_scale = 2.0

@@ -21,7 +21,7 @@ class XarmPickPlaceEnvCfg(DirectRLEnvCfg):
     episode_length_s = 5.0
     decimation = 2
     action_space = 8
-    observation_space = 33
+    observation_space = 30
     state_space = 0
 
     # simulation
@@ -122,7 +122,7 @@ class XarmPickPlaceEnvCfg(DirectRLEnvCfg):
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.2, 0.65, 0.25), opacity=0.5),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(
-            pos=(0.15, 0.55, 0.801),
+            pos=(0.45, 0.20, 0.801),
             rot=(0.0, 0.0, 0.0, 1.0),
         ),
     )
@@ -161,24 +161,22 @@ class XarmPickPlaceEnvCfg(DirectRLEnvCfg):
 
     # table / workspace geometry
     table_surface_height = 0.80
-    object_pos_x_range = (0.15, 0.55)
-    object_pos_y_range = (-0.10, 0.80)
+    fixed_object_pos = (0.50, 0.60)
+    # object_pos_x_range = (0.30, 0.70)
+    # object_pos_y_range = (0.10, 0.90)
 
     # fixed place target (env-local, never randomized)
-    place_target_pos = (0.15, 0.55, 0.801 + 0.06)  # + half object height
+    # place_target_pos = (0.60, 0.20, 0.801 + 0.06)  # + half object height
 
     # reward scales
-    near_object_reward_scale = 1.0
-    close_reward_scale = 4.0
-    lift_reward_scale = 6.0
-    near_target_reward_scale = 3.0
-    place_bonus_scale = 20.0
-    drop_penalty_scale = 4.0
-    action_penalty_scale = 0.02
+    dist_reward_scale = 0.5
+    grasp_reward_scale = 10.0
+    lift_reward_scale = 12.0
+    action_penalty_scale = 0.01
 
     # thresholds
-    grasp_dist_threshold = 0.06
+    grasp_dist_threshold = 0.05
     gripper_close_threshold = 0.5
     lift_height_threshold = 0.05
-    place_dist_threshold = 0.04
-    place_height_threshold = 0.03
+    pick_success_height = 0.15
+    fall_height_threshold = 0.82  # object z (relative to env ground) below this counts as fallen
