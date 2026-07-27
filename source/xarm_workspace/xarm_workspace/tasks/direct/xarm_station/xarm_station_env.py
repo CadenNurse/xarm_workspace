@@ -12,6 +12,7 @@ from pxr import UsdGeom
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation, RigidObject
+from isaaclab.sensors import ContactSensor
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.utils.stage import get_current_stage
 from isaaclab.utils.math import combine_frame_transforms, quat_apply, quat_conjugate, sample_uniform
@@ -130,10 +131,10 @@ class XarmStationEnv(DirectRLEnv):
         )
 
         self.hand_link_idx = self._robot.find_bodies("link7")[0][0]
-        # self.left_finger_link_idx = self._robot.find_bodies("left_finger")[0][0]
-        # self.right_finger_link_idx = self._robot.find_bodies("right_finger")[0][0]
+        self.left_finger_link_idx = self._robot.find_bodies("left_finger")[0][0]
+        self.right_finger_link_idx = self._robot.find_bodies("right_finger")[0][0]
         self.lid_link_idx = self._laptop.find_bodies("lid_link")[0][0]
-        self.base_link_idx = self._laptop.find_bodies("base_link")[0][0]
+        # self.base_link_idx = self._laptop.find_bodies("base_link")[0][0]
         self.hinge_joint_idx = self._laptop.find_joints("hinge_joint")[0][0]
 
         self.robot_grasp_rot = torch.zeros((self.num_envs, 4), device=self.device)
@@ -151,6 +152,19 @@ class XarmStationEnv(DirectRLEnv):
         self.scene.articulations["robot"] = self._robot
         self.scene.articulations["laptop"] = self._laptop
         self.scene.rigid_objects["table"] = self._workstation
+
+        # Contact between robot and workstation
+        # self.scene.sensors["link2_contact"] = ContactSensor(self.cfg.link2_contact)
+        # self.scene.sensors["link3_contact"] = ContactSensor(self.cfg.link3_contact)
+        # self.scene.sensors["link4_contact"] = ContactSensor(self.cfg.link4_contact)
+        # self.scene.sensors["link5_contact"] = ContactSensor(self.cfg.link5_contact)
+        # self.scene.sensors["link6_contact"] = ContactSensor(self.cfg.link6_contact)
+        # self.scene.sensors["link7_contact"] = ContactSensor(self.cfg.link7_contact)
+        # self.scene.sensors["gripper_base_contact"] = ContactSensor(self.cfg.gripper_base_contact)
+        # self.scene.sensors["right_outer_contact"] = ContactSensor(self.cfg.right_outer_contact)
+        # self.scene.sensors["left_outer_contact"] = ContactSensor(self.cfg.left_outer_contact)
+        # self.scene.sensors["right_finger_contact"] = ContactSensor(self.cfg.right_finger_contact)
+        # self.scene.sensors["left_finger_contact"] = ContactSensor(self.cfg.left_finger_contact)
 
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
@@ -205,6 +219,41 @@ class XarmStationEnv(DirectRLEnv):
         overshoot = torch.clamp(self.cfg.target_lid_angle - hinge_pos, min=0.0)
         overshoot_penalty = overshoot * overshoot
 
+        # finger reward, body penalty
+        lfinger_pos = self._robot.data.body_pos_w.torch[:, self.left_finger_link_idx]
+        rfinger_pos = self._robot.data.body_pos_w.torch[:, self.right_finger_link_idx]
+
+        lfinger_dist = torch.linalg.norm(lfinger_pos - self.lid_push_pos, dim=-1)
+        rfinger_dist = torch.linalg.norm(rfinger_pos - self.lid_push_pos, dim=-1)
+        finger_mid_pos = 0.5 * (lfinger_pos + rfinger_pos)
+        finger_mid_dist = torch.linalg.norm(finger_mid_pos - self.lid_push_pos, dim=-1)
+
+        finger_reach_reward = 1.0 / (1.0 + finger_mid_dist * finger_mid_dist)
+        finger_reach_reward = finger_reach_reward * finger_reach_reward
+
+        fingers_near_lid = ((lfinger_dist < 0.05) & (rfinger_dist < 0.05)).float()
+        finger_close_bonus = fingers_near_lid * torch.clamp(-hinge_vel, min=0.0)
+
+        body_push_penalty = (
+            (d < 0.05) &
+            ((lfinger_dist > 0.07) | (rfinger_dist > 0.07))
+        ).float()
+
+        # contact penalty
+        # workstation_hit = (
+        #     self._sensor_hit("link2_contact")
+        #     | self._sensor_hit("link3_contact")
+        #     | self._sensor_hit("link4_contact")
+        #     | self._sensor_hit("link5_contact")
+        #     | self._sensor_hit("link6_contact")
+        #     | self._sensor_hit("link7_contact")
+        #     | self._sensor_hit("gripper_base_contact")
+        #     | self._sensor_hit("right_outer_contact")
+        #     | self._sensor_hit("left_outer_contact")
+        #     | self._sensor_hit("right_finger_contact")
+        #     | self._sensor_hit("left_finger_contact")
+        # ).float()
+
         success_bonus = torch.where(
             hinge_pos <= self.cfg.success_lid_angle_threshold,
             torch.ones_like(hinge_pos),
@@ -221,9 +270,13 @@ class XarmStationEnv(DirectRLEnv):
             self.cfg.reach_reward_scale * reach_reward
             + self.cfg.close_reward_scale * close_reward
             + self.cfg.close_vel_reward_scale * moving_closed_reward
+            + self.cfg.finger_reach_reward_scale * finger_reach_reward
+            + self.cfg.finger_close_bonus_scale * finger_close_bonus
+            - self.cfg.body_push_penalty_scale * body_push_penalty
             - self.cfg.action_penalty_scale * action_penalty
             - self.cfg.fast_close_penalty_scale * fast_close_penalty
             - self.cfg.overshoot_penalty_scale * overshoot_penalty
+            # - self.cfg.workstation_contact_penalty_scale * workstation_hit
             + self.cfg.success_bonus_scale * success_bonus
         )
 
@@ -239,6 +292,12 @@ class XarmStationEnv(DirectRLEnv):
             "fast_close_penalty": (-self.cfg.fast_close_penalty_scale * fast_close_penalty).mean(),
             "overshoot_penalty": (-self.cfg.overshoot_penalty_scale * overshoot_penalty).mean(),
             "action_penalty": (-self.cfg.action_penalty_scale * action_penalty).mean(),
+            # "contact_penalty": (- self.cfg.workstation_contact_penalty_scale * workstation_hit).mean(),
+            "finger_reach_reward": (self.cfg.finger_reach_reward_scale * finger_reach_reward).mean(),
+            "finger_close_bonus": (self.cfg.finger_close_bonus_scale * finger_close_bonus).mean(),
+            "body_push_penalty": (-self.cfg.body_push_penalty_scale * body_push_penalty).mean(),
+            "lfinger_dist": lfinger_dist.mean(),
+            "rfinger_dist": rfinger_dist.mean(),
             "success_bonus": (self.cfg.success_bonus_scale * success_bonus).mean(),
             "total_reward": total_reward.mean(),
         }
@@ -323,6 +382,13 @@ class XarmStationEnv(DirectRLEnv):
         return {"policy": torch.clamp(obs, -5.0, 5.0)}
 
     # auxiliary methods
+
+    def _sensor_hit(self, sensor_name: str, threshold: float = 1.0):
+        sensor = self.scene.sensors[sensor_name]
+        forces = sensor.data.force_matrix_w
+        mag = torch.linalg.norm(forces, dim=-1)
+
+        return mag.amax(dim=-1) > threshold
 
     def _compute_intermediate_values(self, env_ids: torch.Tensor | None = None):
         if env_ids is None:

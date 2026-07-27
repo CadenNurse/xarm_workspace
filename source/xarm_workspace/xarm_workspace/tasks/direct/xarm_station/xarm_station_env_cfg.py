@@ -14,12 +14,13 @@ from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
 # from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.configclass import configclass
+from isaaclab.sensors import ContactSensorCfg
 
 
 @configclass
 class XarmStationEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 5.3333  # 500 timesteps
+    episode_length_s = 3.5  # 500 timesteps
     decimation = 2
     action_space = 8
     observation_space = 31
@@ -48,7 +49,7 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
         prim_path="/World/envs/env_.*/Robot",
         spawn=sim_utils.UsdFileCfg(
             usd_path=f"/home/cadennurse/Documents/isaac_lab_test/L_xarm.usd",
-            activate_contact_sensors=False,
+            activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
                 max_depenetration_velocity=5.0,
@@ -98,10 +99,10 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
         prim_path="/World/envs/env_.*/Laptop",
         spawn=sim_utils.UsdFileCfg(
             usd_path=f"/home/cadennurse/Documents/isaac_lab_test/thinkpad_x13_gen1_REAL.usd",
-            activate_contact_sensors=False,
+            activate_contact_sensors=True,
         ),
         init_state=ArticulationCfg.InitialStateCfg(
-            pos=(0.40, 0.70, 0.80),
+            pos=(0.40, 0.80, 0.80),
             rot=(0.0, 0.0, 0.0, 1.0),
             joint_pos={"hinge_joint": 1.1},
         ),
@@ -109,9 +110,9 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
             "hinge": ImplicitActuatorCfg(
                 joint_names_expr=["hinge_joint"],
                 effort_limit_sim=10.0,
-                stiffness=10.0,
-                damping=0.10,
-                friction=1.5,
+                stiffness=0.0,
+                damping=0.25,
+                friction=1.8,
             ),
         },
     )
@@ -120,7 +121,7 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
     workstation = RigidObjectCfg(
         prim_path="/World/envs/env_.*/Workstation",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"/home/cadennurse/Documents/isaac_lab_test/workspace_apriltag.usd",
+            usd_path=f"/home/cadennurse/Documents/isaac_lab_test/workstation.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True,
             ),
@@ -131,6 +132,85 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
 
         ),
     )
+
+    # contact sensors
+    # link2_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link2",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # link3_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link3",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # link4_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link4",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # link5_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link5",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # link6_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link6",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # link7_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link7",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # gripper_base_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/gripper/xarm_gripper_base_link",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # right_outer_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/gripper/right_outer_knuckle",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # left_outer_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/gripper/left_outer_knuckle",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # right_finger_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/gripper/right_finger",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
+    # left_finger_contact = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/gripper/left_finger",
+    #     update_period=0.0,
+    #     history_length=1,
+    #     debug_vis=False,
+    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
+    # )
 
     # ground plane
     terrain = TerrainImporterCfg(
@@ -150,19 +230,20 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
     dof_velocity_scale = 0.1
 
     # reward scales
-    reach_reward_scale = 3.0
-    close_reward_scale = 15.0
+    reach_reward_scale = 1.0
+    close_reward_scale = 12.0
     action_penalty_scale = 0.02
-    laptop_move_penalty_scale = 2.0
-    laptop_tilt_penalty_scale = 1.0
-    laptop_base_pos_penalty_scale = 4.0
-    success_bonus_scale = 10.0
-    close_vel_reward_scale = 2.0
-    fast_close_penalty_scale = 5.0
-    overshoot_penalty_scale = 5.0
+    success_bonus_scale = 18.0
+    close_vel_reward_scale = 5.0
+    fast_close_penalty_scale = 3.0
+    overshoot_penalty_scale = 8.0
+    workstation_contact_penalty_scale = 0.3
 
-    target_lid_angle = 0.25
-    start_lid_angle = 1.0
+    finger_reach_reward_scale = 1.0
+    finger_close_bonus_scale = 2.0
+    body_push_penalty_scale = 2.5
+
+    target_lid_angle = 0.20
 
     # success criteria
     success_lid_angle_threshold : float = 0.30
