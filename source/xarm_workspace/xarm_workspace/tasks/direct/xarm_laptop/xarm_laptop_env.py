@@ -198,6 +198,11 @@ class XarmLaptopEnv(DirectRLEnv):
         close_reward = -hinge_error
         action_penalty = torch.sum(self.actions ** 2, dim=-1)
 
+        fast_close_penalty = torch.square(torch.clamp(-hinge_vel, min=0.0))
+
+        overshoot = torch.clamp(self.cfg.target_lid_angle - hinge_pos, min=0.0)
+        overshoot_penalty = overshoot * overshoot
+
         success_bonus = torch.where(
             hinge_pos <= self.cfg.success_lid_angle_threshold,
             torch.ones_like(hinge_pos),
@@ -215,6 +220,8 @@ class XarmLaptopEnv(DirectRLEnv):
             + self.cfg.close_reward_scale * close_reward
             + self.cfg.close_vel_reward_scale * moving_closed_reward
             - self.cfg.action_penalty_scale * action_penalty
+            - self.cfg.fast_close_penalty_scale * fast_close_penalty
+            - self.cfg.overshoot_penalty_scale * overshoot_penalty
             + self.cfg.success_bonus_scale * success_bonus
         )
 
@@ -227,6 +234,8 @@ class XarmLaptopEnv(DirectRLEnv):
             "reach_reward": (self.cfg.reach_reward_scale * reach_reward).mean(),
             "close_reward": (self.cfg.close_reward_scale * close_reward).mean(),
             "close_vel_reward": (self.cfg.close_vel_reward_scale * moving_closed_reward).mean(),
+            "fast_close_penalty": (-self.cfg.fast_close_penalty_scale * fast_close_penalty).mean(),
+            "overshoot_penalty": (-self.cfg.overshoot_penalty_scale * overshoot_penalty).mean(),
             "action_penalty": (-self.cfg.action_penalty_scale * action_penalty).mean(),
             "success_bonus": (self.cfg.success_bonus_scale * success_bonus).mean(),
             "total_reward": total_reward.mean(),
@@ -280,7 +289,7 @@ class XarmLaptopEnv(DirectRLEnv):
         # laptop state
         laptop_joint_pos = self._laptop.data.default_joint_pos.torch[env_ids].clone()
         laptop_joint_vel = torch.zeros_like(laptop_joint_pos)
-        laptop_joint_pos[:, self.hinge_joint_idx] = self.cfg.start_lid_angle
+        # laptop_joint_pos[:, self.hinge_joint_idx] = self.cfg.start_lid_angle
 
         # replace below if getting index issues
         # self._laptop.write_joint_position_to_sim(position=laptop_joint_pos, env_ids=env_ids)

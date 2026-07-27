@@ -11,7 +11,7 @@ import warp as wp
 from pxr import UsdGeom
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import Articulation
+from isaaclab.assets import Articulation, RigidObject
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.utils.stage import get_current_stage
 from isaaclab.utils.math import combine_frame_transforms, quat_apply, quat_conjugate, sample_uniform
@@ -147,8 +147,10 @@ class XarmStationEnv(DirectRLEnv):
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot)
         self._laptop = Articulation(self.cfg.laptop)
+        self._workstation = RigidObject(self.cfg.workstation)
         self.scene.articulations["robot"] = self._robot
         self.scene.articulations["laptop"] = self._laptop
+        self.scene.rigid_objects["table"] = self._workstation
 
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
@@ -198,6 +200,11 @@ class XarmStationEnv(DirectRLEnv):
         close_reward = -hinge_error
         action_penalty = torch.sum(self.actions ** 2, dim=-1)
 
+        fast_close_penalty = torch.square(torch.clamp(-hinge_vel, min=0.0))
+
+        overshoot = torch.clamp(self.cfg.target_lid_angle - hinge_pos, min=0.0)
+        overshoot_penalty = overshoot * overshoot
+
         success_bonus = torch.where(
             hinge_pos <= self.cfg.success_lid_angle_threshold,
             torch.ones_like(hinge_pos),
@@ -215,6 +222,8 @@ class XarmStationEnv(DirectRLEnv):
             + self.cfg.close_reward_scale * close_reward
             + self.cfg.close_vel_reward_scale * moving_closed_reward
             - self.cfg.action_penalty_scale * action_penalty
+            - self.cfg.fast_close_penalty_scale * fast_close_penalty
+            - self.cfg.overshoot_penalty_scale * overshoot_penalty
             + self.cfg.success_bonus_scale * success_bonus
         )
 
@@ -227,6 +236,8 @@ class XarmStationEnv(DirectRLEnv):
             "reach_reward": (self.cfg.reach_reward_scale * reach_reward).mean(),
             "close_reward": (self.cfg.close_reward_scale * close_reward).mean(),
             "close_vel_reward": (self.cfg.close_vel_reward_scale * moving_closed_reward).mean(),
+            "fast_close_penalty": (-self.cfg.fast_close_penalty_scale * fast_close_penalty).mean(),
+            "overshoot_penalty": (-self.cfg.overshoot_penalty_scale * overshoot_penalty).mean(),
             "action_penalty": (-self.cfg.action_penalty_scale * action_penalty).mean(),
             "success_bonus": (self.cfg.success_bonus_scale * success_bonus).mean(),
             "total_reward": total_reward.mean(),
@@ -271,18 +282,14 @@ class XarmStationEnv(DirectRLEnv):
 
         # restore laptop base to original pose
         laptop_root_pose = self._laptop.data.default_root_state.torch[env_ids, :7].clone()
+        laptop_root_pose[:, 0:3] += self.scene.env_origins[env_ids]
         laptop_root_vel = torch.zeros_like(self._laptop.data.default_root_state.torch[env_ids, 7:])
-        base_link_pos = self._laptop.data.body_pos_w.torch[:, self.base_link_idx]
 
         self._laptop.write_root_pose_to_sim(laptop_root_pose, env_ids=env_ids)
         self._laptop.write_root_velocity_to_sim(laptop_root_vel, env_ids=env_ids)
 
         # laptop state
-        laptop_joint_pos = torch.full(
-            (len(env_ids), self._laptop.num_joints),
-            self.cfg.start_lid_angle,
-            device=self.device,
-        )
+        laptop_joint_pos = self._laptop.data.default_joint_pos.torch[env_ids].clone()
         laptop_joint_vel = torch.zeros_like(laptop_joint_pos)
 
         # replace below if getting index issues

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
-from isaaclab.assets import ArticulationCfg
+from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
@@ -54,7 +54,7 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
                 max_depenetration_velocity=5.0,
             ),
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-                enabled_self_collisions=False, solver_position_iteration_count=12, solver_velocity_iteration_count=1
+                enabled_self_collisions=True, solver_position_iteration_count=12, solver_velocity_iteration_count=1
             ),
         ),
         init_state=ArticulationCfg.InitialStateCfg(
@@ -68,8 +68,8 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
                 "joint7": 0.0,
                 "drive_joint": 0.0,
             },
-            pos=(0.6, 0.0, 0.0),
-            rot=(0.0, 0.0, 1.0, 0.0),
+            pos=(0.172, 0.31, 0.798),
+            rot=(0.0, 0.0, 0.0, 1.0),
         ),
         actuators={
             "xarm_shoulder": ImplicitActuatorCfg(
@@ -101,19 +101,35 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
             activate_contact_sensors=False,
         ),
         init_state=ArticulationCfg.InitialStateCfg(
-            pos=(0.0, 0.0, 0.0),
+            pos=(0.40, 0.70, 0.80),
             rot=(0.0, 0.0, 0.0, 1.0),
-            joint_pos={"hinge_joint": 0.70},
+            joint_pos={"hinge_joint": 1.1},
         ),
         actuators={
             "hinge": ImplicitActuatorCfg(
                 joint_names_expr=["hinge_joint"],
                 effort_limit_sim=10.0,
-                stiffness=0.0,
-                damping=0.05,
-                friction=1.0,
+                stiffness=10.0,
+                damping=0.10,
+                friction=1.5,
             ),
         },
+    )
+
+    # table
+    workstation = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/Workstation",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"/home/cadennurse/Documents/isaac_lab_test/workspace_apriltag.usd",
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                kinematic_enabled=True,
+            ),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(
+            pos=(0.0, 0.0, 0.0),
+            rot=(0.0, 0.0, 0.0, 1.0),
+
+        ),
     )
 
     # ground plane
@@ -129,24 +145,25 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
             restitution=0.0,
         ),
     )
-    
 
     action_scale = 7.5
     dof_velocity_scale = 0.1
 
     # reward scales
-    reach_reward_scale = 1.0
-    close_reward_scale = 18.0
+    reach_reward_scale = 3.0
+    close_reward_scale = 15.0
     action_penalty_scale = 0.02
     laptop_move_penalty_scale = 2.0
     laptop_tilt_penalty_scale = 1.0
     laptop_base_pos_penalty_scale = 4.0
     success_bonus_scale = 10.0
     close_vel_reward_scale = 2.0
+    fast_close_penalty_scale = 5.0
+    overshoot_penalty_scale = 5.0
 
-    target_lid_angle = 0.10
-    start_lid_angle = 0.60
+    target_lid_angle = 0.25
+    start_lid_angle = 1.0
 
     # success criteria
-    success_lid_angle_threshold : float = 0.15
+    success_lid_angle_threshold : float = 0.30
     """laptop joint position below which the lid is considered successfully closed [rads]."""

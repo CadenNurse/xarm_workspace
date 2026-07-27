@@ -19,7 +19,7 @@ from isaaclab.utils.configclass import configclass
 @configclass
 class XarmLaptopEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 5.3333  # 500 timesteps
+    episode_length_s = 3.3333  # timesteps
     decimation = 2
     action_space = 8
     observation_space = 31
@@ -40,7 +40,7 @@ class XarmLaptopEnvCfg(DirectRLEnvCfg):
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
-        num_envs=64, env_spacing=3.0, replicate_physics=True, clone_in_fabric=True
+        num_envs=100, env_spacing=3.0, replicate_physics=True, clone_in_fabric=True
     )
 
     # robot
@@ -103,7 +103,7 @@ class XarmLaptopEnvCfg(DirectRLEnvCfg):
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.0, 0.0, 0.0),
             rot=(0.0, 0.0, 0.0, 1.0),
-            joint_pos={"hinge_joint": 0.70},
+            joint_pos={"hinge_joint": 1.1},
         ),
         actuators={
             "hinge": ImplicitActuatorCfg(
@@ -142,10 +142,12 @@ class XarmLaptopEnvCfg(DirectRLEnvCfg):
     laptop_base_pos_penalty_scale = 4.0
     success_bonus_scale = 10.0
     close_vel_reward_scale = 2.0
+    fast_close_penalty_scale = 10.0
+    overshoot_penalty_scale = 15.0
 
-    target_lid_angle = 0.10
-    start_lid_angle = 0.60
+    target_lid_angle = 0.25
+    start_lid_angle = 1.0
 
     # success criteria
-    success_lid_angle_threshold : float = 0.15
+    success_lid_angle_threshold : float = 0.30
     """laptop joint position below which the lid is considered successfully closed [rads]."""
