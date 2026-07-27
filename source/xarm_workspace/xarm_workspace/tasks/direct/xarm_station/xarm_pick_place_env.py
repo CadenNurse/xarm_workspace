@@ -12,13 +12,11 @@ from pxr import UsdGeom
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation, RigidObject
-from isaaclab.sensors import ContactSensor
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.utils.stage import get_current_stage
 from isaaclab.utils.math import combine_frame_transforms, quat_apply, quat_conjugate, sample_uniform
 
-from .xarm_pick_place_env_cfg import XarmPickPlaceEnvCfg  
-
+from .xarm_pick_place_env_cfg import XarmPickPlaceEnvCfg
 
 
 class XarmPickPlaceEnv(DirectRLEnv):
@@ -50,7 +48,6 @@ class XarmPickPlaceEnv(DirectRLEnv):
             qz = world_quat.imaginary[2]
             qw = world_quat.real
 
-            # Return pose as [pos(3), quat_xyzw(4)]
             return torch.tensor([px, py, pz, qx, qy, qz, qw], device=device)
 
         self.dt = self.cfg.sim.dt * self.cfg.decimation
@@ -59,7 +56,6 @@ class XarmPickPlaceEnv(DirectRLEnv):
             ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7", "drive_joint"]
         )
 
-        # create auxiliary variables for computing applied action, observations and rewards
         self.robot_dof_lower_limits = self._robot.data.soft_joint_pos_limits.torch[0, self.control_joint_ids, 0].to(self.device)
         self.robot_dof_upper_limits = self._robot.data.soft_joint_pos_limits.torch[0, self.control_joint_ids, 1].to(self.device)
 
@@ -70,17 +66,6 @@ class XarmPickPlaceEnv(DirectRLEnv):
         self.robot_dof_speed_scales[-1] = 0.1
 
         self.robot_dof_targets = torch.zeros((self.num_envs, len(self.control_joint_ids)), device=self.device)
-
-        stage = get_current_stage()
-        robot_prim = stage.GetPrimAtPath("/World/envs/env_0/Robot")
-
-        # print("robot prim valid:", robot_prim.IsValid())
-        # for prim in robot_prim.GetChildren():
-        #     print("child:", prim.GetPath())
-        #     for child in prim.GetChildren():
-        #         print("  subchild:", child.GetPath())
-        #         for gchild in child.GetChildren():
-        #             print("    gchild:", gchild.GetPath())
 
         stage = get_current_stage()
         hand_pose = get_env_local_pose(
@@ -112,71 +97,41 @@ class XarmPickPlaceEnv(DirectRLEnv):
         self.robot_local_grasp_pos = robot_local_pose_pos.repeat((self.num_envs, 1))
         self.robot_local_grasp_rot = robot_local_grasp_pose_rot.repeat((self.num_envs, 1))
 
-        # Laptop local push pose: [pos(3), quat_xyzw(4)] - identity quaternion is [0,0,0,1]
-        lid_local_push_pose = torch.tensor([0.18, 0.0, 0.02, 0.0, 0.0, 0.0, 1.0], device=self.device)
-        self.lid_local_push_pos = lid_local_push_pose[0:3].repeat((self.num_envs, 1))
-        self.lid_local_push_rot = lid_local_push_pose[3:7].repeat((self.num_envs, 1))
-
-        self.gripper_forward_axis = torch.tensor([0, 0, 1], device=self.device, dtype=torch.float32).repeat(
-            (self.num_envs, 1)
-        )
-        self.lid_close_axis = torch.tensor([-1, 0, 0], device=self.device, dtype=torch.float32).repeat(
-            (self.num_envs, 1)
-        )
-        self.gripper_up_axis = torch.tensor([0, 1, 0], device=self.device, dtype=torch.float32).repeat(
-            (self.num_envs, 1)
-        )
-        self.lid_up_axis = torch.tensor([0, 0, 1], device=self.device, dtype=torch.float32).repeat(
-            (self.num_envs, 1)
-        )
-
         self.hand_link_idx = self._robot.find_bodies("link7")[0][0]
         self.left_finger_link_idx = self._robot.find_bodies("left_finger")[0][0]
         self.right_finger_link_idx = self._robot.find_bodies("right_finger")[0][0]
-        self.lid_link_idx = self._laptop.find_bodies("lid_link")[0][0]
-        # self.base_link_idx = self._laptop.find_bodies("base_link")[0][0]
-        self.hinge_joint_idx = self._laptop.find_joints("hinge_joint")[0][0]
+        self.drive_joint_idx = self.control_joint_ids[-1]
 
         self.robot_grasp_rot = torch.zeros((self.num_envs, 4), device=self.device)
         self.robot_grasp_pos = torch.zeros((self.num_envs, 3), device=self.device)
-        self.lid_push_rot = torch.zeros((self.num_envs, 4), device=self.device)
-        self.lid_push_pos = torch.zeros((self.num_envs, 3), device=self.device)
 
-        # Sticky per-env flag: True once the lid was closed past the success threshold.
+        # fixed place target per env (never randomized after this)
+        place_target = torch.tensor(self.cfg.place_target_pos, device=self.device)
+        self.place_target_pos = place_target.repeat((self.num_envs, 1)) + self.scene.env_origins
+
+        # per-episode grasp/lift state
+        self._is_grasped = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._was_lifted = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._episode_succeeded = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot)
-        self._laptop = Articulation(self.cfg.laptop)
+        self._object = RigidObject(self.cfg.obj)
+        self._place_marker = RigidObject(self.cfg.place_marker)
         self._workstation = RigidObject(self.cfg.workstation)
         self.scene.articulations["robot"] = self._robot
-        self.scene.articulations["laptop"] = self._laptop
+        self.scene.rigid_objects["object"] = self._object
+        self.scene.rigid_objects["place_marker"] = self._place_marker
         self.scene.rigid_objects["table"] = self._workstation
-
-        # Contact between robot and workstation
-        # self.scene.sensors["link2_contact"] = ContactSensor(self.cfg.link2_contact)
-        # self.scene.sensors["link3_contact"] = ContactSensor(self.cfg.link3_contact)
-        # self.scene.sensors["link4_contact"] = ContactSensor(self.cfg.link4_contact)
-        # self.scene.sensors["link5_contact"] = ContactSensor(self.cfg.link5_contact)
-        # self.scene.sensors["link6_contact"] = ContactSensor(self.cfg.link6_contact)
-        # self.scene.sensors["link7_contact"] = ContactSensor(self.cfg.link7_contact)
-        # self.scene.sensors["gripper_base_contact"] = ContactSensor(self.cfg.gripper_base_contact)
-        # self.scene.sensors["right_outer_contact"] = ContactSensor(self.cfg.right_outer_contact)
-        # self.scene.sensors["left_outer_contact"] = ContactSensor(self.cfg.left_outer_contact)
-        # self.scene.sensors["right_finger_contact"] = ContactSensor(self.cfg.right_finger_contact)
-        # self.scene.sensors["left_finger_contact"] = ContactSensor(self.cfg.left_finger_contact)
 
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
         self._terrain = self.cfg.terrain.class_type(self.cfg.terrain)
 
-        # clone and replicate
         self.scene.clone_environments(copy_from_source=False)
-        # we need to explicitly filter collisions for CPU simulation
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=[self.cfg.terrain.prim_path])
 
-        # add lights
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
 
@@ -193,8 +148,11 @@ class XarmPickPlaceEnv(DirectRLEnv):
     # post-physics step calls
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
-        hinge_pos = self._laptop.data.joint_pos.torch[:, self.hinge_joint_idx]
-        success = hinge_pos <= self.cfg.success_lid_angle_threshold
+        object_pos = self._object.data.root_pos_w.torch
+        target_dist = torch.linalg.norm(object_pos - self.place_target_pos, dim=-1)
+        near_table_height = torch.abs(object_pos[:, 2] - self.place_target_pos[:, 2]) < self.cfg.place_height_threshold
+
+        success = self._was_lifted & (target_dist < self.cfg.place_dist_threshold) & near_table_height
         too_early = self.episode_length_buf < 30
         terminated = success & ~too_early
         truncated = self.episode_length_buf >= self.max_episode_length - 1
@@ -203,102 +161,80 @@ class XarmPickPlaceEnv(DirectRLEnv):
     def _get_rewards(self) -> torch.Tensor:
         self._compute_intermediate_values()
 
-        hinge_pos = self._laptop.data.joint_pos.torch[:, self.hinge_joint_idx]
-        hinge_vel = self._laptop.data.joint_vel.torch[:, self.hinge_joint_idx]
-        hinge_error = torch.abs(hinge_pos - self.cfg.target_lid_angle)
+        object_pos = self._object.data.root_pos_w.torch
+        object_height = object_pos[:, 2] - self.cfg.table_surface_height
 
-        d = torch.linalg.norm(self.robot_grasp_pos - self.lid_push_pos, dim=-1)
-        reach_reward = 1.0 / (1.0 + d * d)
-        reach_reward = reach_reward * reach_reward
-
-        close_reward = -hinge_error
-        action_penalty = torch.sum(self.actions ** 2, dim=-1)
-
-        fast_close_penalty = torch.square(torch.clamp(-hinge_vel, min=0.0))
-
-        overshoot = torch.clamp(self.cfg.target_lid_angle - hinge_pos, min=0.0)
-        overshoot_penalty = overshoot * overshoot
-
-        # finger reward, body penalty
         lfinger_pos = self._robot.data.body_pos_w.torch[:, self.left_finger_link_idx]
         rfinger_pos = self._robot.data.body_pos_w.torch[:, self.right_finger_link_idx]
-
-        lfinger_dist = torch.linalg.norm(lfinger_pos - self.lid_push_pos, dim=-1)
-        rfinger_dist = torch.linalg.norm(rfinger_pos - self.lid_push_pos, dim=-1)
         finger_mid_pos = 0.5 * (lfinger_pos + rfinger_pos)
-        finger_mid_dist = torch.linalg.norm(finger_mid_pos - self.lid_push_pos, dim=-1)
 
-        finger_reach_reward = 1.0 / (1.0 + finger_mid_dist * finger_mid_dist)
-        finger_reach_reward = finger_reach_reward * finger_reach_reward
+        lfinger_dist = torch.linalg.norm(lfinger_pos - object_pos, dim=-1)
+        rfinger_dist = torch.linalg.norm(rfinger_pos - object_pos, dim=-1)
+        finger_mid_dist = torch.linalg.norm(finger_mid_pos - object_pos, dim=-1)
 
-        fingers_near_lid = ((lfinger_dist < 0.05) & (rfinger_dist < 0.05)).float()
-        finger_close_bonus = fingers_near_lid * torch.clamp(-hinge_vel, min=0.0)
+        gripper_pos = self._robot.data.joint_pos.torch[:, self.drive_joint_idx]
+        gripper_closed = gripper_pos > self.cfg.gripper_close_threshold
 
-        body_push_penalty = (
-            (d < 0.05) &
-            ((lfinger_dist > 0.07) | (rfinger_dist > 0.07))
-        ).float()
+        fingers_near_object = ((lfinger_dist < self.cfg.grasp_dist_threshold) & (rfinger_dist < self.cfg.grasp_dist_threshold))
+        self._is_grasped = fingers_near_object & gripper_closed
 
-        # contact penalty
-        # workstation_hit = (
-        #     self._sensor_hit("link2_contact")
-        #     | self._sensor_hit("link3_contact")
-        #     | self._sensor_hit("link4_contact")
-        #     | self._sensor_hit("link5_contact")
-        #     | self._sensor_hit("link6_contact")
-        #     | self._sensor_hit("link7_contact")
-        #     | self._sensor_hit("gripper_base_contact")
-        #     | self._sensor_hit("right_outer_contact")
-        #     | self._sensor_hit("left_outer_contact")
-        #     | self._sensor_hit("right_finger_contact")
-        #     | self._sensor_hit("left_finger_contact")
-        # ).float()
+        lifted = self._is_grasped & (object_height > self.cfg.lift_height_threshold)
+        self._was_lifted |= lifted
 
-        success_bonus = torch.where(
-            hinge_pos <= self.cfg.success_lid_angle_threshold,
-            torch.ones_like(hinge_pos),
-            torch.zeros_like(hinge_pos),
+        target_dist = torch.linalg.norm(object_pos - self.place_target_pos, dim=-1)
+
+        # near-object reward: pulls the gripper toward the object before grasping
+        near_object_reward = 1.0 / (1.0 + finger_mid_dist * finger_mid_dist)
+        near_object_reward = near_object_reward * near_object_reward
+
+        # close reward: reward closing the gripper only once the fingers are near the object
+        close_reward = fingers_near_object.float() * gripper_pos.clamp(min=0.0)
+
+        # lift reward: object height above the table, gated on an actual grasp
+        lift_reward = self._is_grasped.float() * torch.clamp(object_height, min=0.0, max=0.20)
+
+        # near-target reward: pulls the grasped object toward the fixed place target
+        near_target_reward = self._was_lifted.float() * (1.0 / (1.0 + target_dist * target_dist))
+
+        # place bonus: object at the target, near table height, gripper opening to release
+        gripper_releasing = gripper_pos < (self.cfg.gripper_close_threshold * 0.5)
+        near_table_height = torch.abs(object_pos[:, 2] - self.place_target_pos[:, 2]) < self.cfg.place_height_threshold
+        place_bonus = torch.where(
+            self._was_lifted & (target_dist < self.cfg.place_dist_threshold) & near_table_height & gripper_releasing,
+            torch.ones_like(target_dist),
+            torch.zeros_like(target_dist),
         )
 
-        moving_closed_reward = torch.where(
-            hinge_vel < 0.0,
-            -hinge_vel,
-            torch.zeros_like(hinge_vel),
-        )
+        # drop penalty: object was lifted then fell before reaching the target
+        dropped = self._was_lifted & (object_height < self.cfg.lift_height_threshold * 0.5) & (target_dist > self.cfg.place_dist_threshold)
+        drop_penalty = dropped.float()
+
+        action_penalty = torch.sum(self.actions ** 2, dim=-1)
 
         total_reward = (
-            self.cfg.reach_reward_scale * reach_reward
+            self.cfg.near_object_reward_scale * near_object_reward
             + self.cfg.close_reward_scale * close_reward
-            + self.cfg.close_vel_reward_scale * moving_closed_reward
-            + self.cfg.finger_reach_reward_scale * finger_reach_reward
-            + self.cfg.finger_close_bonus_scale * finger_close_bonus
-            - self.cfg.body_push_penalty_scale * body_push_penalty
+            + self.cfg.lift_reward_scale * lift_reward
+            + self.cfg.near_target_reward_scale * near_target_reward
+            + self.cfg.place_bonus_scale * place_bonus
+            - self.cfg.drop_penalty_scale * drop_penalty
             - self.cfg.action_penalty_scale * action_penalty
-            - self.cfg.fast_close_penalty_scale * fast_close_penalty
-            - self.cfg.overshoot_penalty_scale * overshoot_penalty
-            # - self.cfg.workstation_contact_penalty_scale * workstation_hit
-            + self.cfg.success_bonus_scale * success_bonus
         )
 
-        self._episode_succeeded |= hinge_pos <= self.cfg.success_lid_angle_threshold
+        self._episode_succeeded |= (self._was_lifted & (target_dist < self.cfg.place_dist_threshold) & near_table_height)
 
         self.extras["log"] = {
-            "hinge_pos": hinge_pos.mean(),
-            "hinge_error": hinge_error.mean(),
-            "hinge_vel": hinge_vel.mean(),
-            "reach_reward": (self.cfg.reach_reward_scale * reach_reward).mean(),
+            "object_height": object_height.mean(),
+            "target_dist": target_dist.mean(),
+            "near_object_reward": (self.cfg.near_object_reward_scale * near_object_reward).mean(),
             "close_reward": (self.cfg.close_reward_scale * close_reward).mean(),
-            "close_vel_reward": (self.cfg.close_vel_reward_scale * moving_closed_reward).mean(),
-            "fast_close_penalty": (-self.cfg.fast_close_penalty_scale * fast_close_penalty).mean(),
-            "overshoot_penalty": (-self.cfg.overshoot_penalty_scale * overshoot_penalty).mean(),
+            "lift_reward": (self.cfg.lift_reward_scale * lift_reward).mean(),
+            "near_target_reward": (self.cfg.near_target_reward_scale * near_target_reward).mean(),
+            "place_bonus": (self.cfg.place_bonus_scale * place_bonus).mean(),
+            "drop_penalty": (-self.cfg.drop_penalty_scale * drop_penalty).mean(),
             "action_penalty": (-self.cfg.action_penalty_scale * action_penalty).mean(),
-            # "contact_penalty": (- self.cfg.workstation_contact_penalty_scale * workstation_hit).mean(),
-            "finger_reach_reward": (self.cfg.finger_reach_reward_scale * finger_reach_reward).mean(),
-            "finger_close_bonus": (self.cfg.finger_close_bonus_scale * finger_close_bonus).mean(),
-            "body_push_penalty": (-self.cfg.body_push_penalty_scale * body_push_penalty).mean(),
-            "lfinger_dist": lfinger_dist.mean(),
-            "rfinger_dist": rfinger_dist.mean(),
-            "success_bonus": (self.cfg.success_bonus_scale * success_bonus).mean(),
+            "is_grasped": self._is_grasped.float().mean(),
+            "was_lifted": self._was_lifted.float().mean(),
             "total_reward": total_reward.mean(),
         }
 
@@ -307,14 +243,15 @@ class XarmPickPlaceEnv(DirectRLEnv):
     def _reset_idx(self, env_ids: torch.Tensor | None):
         if env_ids is None:
             env_ids = torch.arange(self.num_envs, device=self.device, dtype=torch.long)
-        # Flush per-episode success (sticky binary: lid ever closed past the cfg threshold).
-        laptop_pos = self._laptop.data.joint_pos.torch[env_ids, self.hinge_joint_idx]
+
         log = self.extras.setdefault("log", {})
         log["Metrics/success_rate"] = self._episode_succeeded[env_ids].float().mean().item()
-        log["Metrics/laptop_pos"] = laptop_pos.mean().item()
         self._episode_succeeded[env_ids] = False
+        self._is_grasped[env_ids] = False
+        self._was_lifted[env_ids] = False
 
         super()._reset_idx(env_ids)
+
         # robot state
         joint_pos = self._robot.data.default_joint_pos.torch[env_ids][:, self.control_joint_ids] + sample_uniform(
             -0.125,
@@ -325,39 +262,41 @@ class XarmPickPlaceEnv(DirectRLEnv):
         joint_pos = torch.clamp(joint_pos, self.robot_dof_lower_limits, self.robot_dof_upper_limits)
         joint_vel = torch.zeros_like(joint_pos)
 
-        # replace lower section with this if error occurs
-        # self._robot.set_joint_position_target(joint_pos, joint_ids=self.control_joint_ids, env_ids=env_ids)
-        # self._robot.write_joint_state_to_sim(
-        #     joint_pos,
-        #     joint_vel,
-        #     joint_ids=self.control_joint_ids,
-        #     env_ids=env_ids,
-        # )
-
         self.robot_dof_targets[env_ids] = joint_pos
         self._robot.set_joint_position_target(joint_pos, joint_ids=self.control_joint_ids, env_ids=env_ids)
         self._robot.write_joint_position_to_sim(position=joint_pos, joint_ids=self.control_joint_ids, env_ids=env_ids)
         self._robot.write_joint_velocity_to_sim(velocity=joint_vel, joint_ids=self.control_joint_ids, env_ids=env_ids)
 
-        # restore laptop base to original pose
-        laptop_root_pose = self._laptop.data.default_root_state.torch[env_ids, :7].clone()
-        laptop_root_pose[:, 0:3] += self.scene.env_origins[env_ids]
-        laptop_root_vel = torch.zeros_like(self._laptop.data.default_root_state.torch[env_ids, 7:])
+        # randomize the object's pickup position each reset; place target stays fixed
+        num_resets = len(env_ids)
+        rand_x = sample_uniform(
+            self.cfg.object_pos_x_range[0], self.cfg.object_pos_x_range[1], (num_resets, 1), self.device
+        )
+        rand_y = sample_uniform(
+            self.cfg.object_pos_y_range[0], self.cfg.object_pos_y_range[1], (num_resets, 1), self.device
+        )
+        object_z = self.cfg.table_surface_height + self.cfg.object_size[2] / 2.0
+        object_pos = torch.cat(
+            [rand_x, rand_y, torch.full((num_resets, 1), object_z, device=self.device)], dim=-1
+        )
 
-        self._laptop.write_root_pose_to_sim(laptop_root_pose, env_ids=env_ids)
-        self._laptop.write_root_velocity_to_sim(laptop_root_vel, env_ids=env_ids)
+        object_root_pose = torch.zeros((num_resets, 7), device=self.device)
+        object_root_pose[:, 0:3] = object_pos + self.scene.env_origins[env_ids]
+        object_root_pose[:, 6] = 1.0  # identity quaternion
+        object_root_vel = torch.zeros((num_resets, 6), device=self.device)
 
-        # laptop state
-        laptop_joint_pos = self._laptop.data.default_joint_pos.torch[env_ids].clone()
-        laptop_joint_vel = torch.zeros_like(laptop_joint_pos)
+        self._object.write_root_pose_to_sim(object_root_pose, env_ids=env_ids)
+        self._object.write_root_velocity_to_sim(object_root_vel, env_ids=env_ids)
 
-        # replace below if getting index issues
-        # self._laptop.write_joint_position_to_sim(position=laptop_joint_pos, env_ids=env_ids)
-        # self._laptop.write_joint_velocity_to_sim(velocity=laptop_joint_vel, env_ids=env_ids)
-        self._laptop.write_joint_position_to_sim_index(position=laptop_joint_pos, env_ids=env_ids)
-        self._laptop.write_joint_velocity_to_sim_index(velocity=laptop_joint_vel, env_ids=env_ids)
+        # place marker: always the same fixed pose, just rewritten defensively on reset
+        marker_root_pose = torch.zeros((num_resets, 7), device=self.device)
+        marker_root_pose[:, 0:3] = self.place_target_pos[env_ids]
+        marker_root_pose[:, 6] = 1.0
+        marker_root_vel = torch.zeros((num_resets, 6), device=self.device)
 
-        # Need to refresh the intermediate values so that _get_observations() can use the latest values
+        self._place_marker.write_root_pose_to_sim(marker_root_pose, env_ids=env_ids)
+        self._place_marker.write_root_velocity_to_sim(marker_root_vel, env_ids=env_ids)
+
         self._compute_intermediate_values(env_ids)
 
     def _get_observations(self) -> dict:
@@ -367,15 +306,19 @@ class XarmPickPlaceEnv(DirectRLEnv):
             / (self.obs_dof_upper_limits - self.obs_dof_lower_limits)
             - 1.0
         )
-        to_target = self.lid_push_pos - self.robot_grasp_pos
+
+        object_pos = self._object.data.root_pos_w.torch
+        to_object = object_pos - self.robot_grasp_pos
+        object_to_target = self.place_target_pos - object_pos
+        object_height = (object_pos[:, 2] - self.cfg.table_surface_height).unsqueeze(-1)
 
         obs = torch.cat(
             (
                 dof_pos_scaled,
                 self._robot.data.joint_vel.torch * self.cfg.dof_velocity_scale,
-                to_target,
-                self._laptop.data.joint_pos.torch[:, self.hinge_joint_idx].unsqueeze(-1),
-                self._laptop.data.joint_vel.torch[:, self.hinge_joint_idx].unsqueeze(-1),
+                to_object,
+                object_to_target,
+                object_height,
             ),
             dim=-1,
         )
@@ -383,134 +326,13 @@ class XarmPickPlaceEnv(DirectRLEnv):
 
     # auxiliary methods
 
-    def _sensor_hit(self, sensor_name: str, threshold: float = 1.0):
-        sensor = self.scene.sensors[sensor_name]
-        forces = sensor.data.force_matrix_w
-        mag = torch.linalg.norm(forces, dim=-1)
-
-        return mag.amax(dim=-1) > threshold
-
     def _compute_intermediate_values(self, env_ids: torch.Tensor | None = None):
         if env_ids is None:
             env_ids = wp.to_torch(self._robot._ALL_INDICES)
 
         hand_pos = self._robot.data.body_pos_w.torch[env_ids, self.hand_link_idx]
         hand_rot = self._robot.data.body_quat_w.torch[env_ids, self.hand_link_idx]
-        laptop_pos = self._laptop.data.body_pos_w.torch[env_ids, self.lid_link_idx]
-        laptop_rot = self._laptop.data.body_quat_w.torch[env_ids, self.lid_link_idx]
-        (
-            self.robot_grasp_rot[env_ids],
-            self.robot_grasp_pos[env_ids],
-            self.lid_push_rot[env_ids],
-            self.lid_push_pos[env_ids],
-        ) = self._compute_grasp_transforms(
-            hand_rot,
-            hand_pos,
-            self.robot_local_grasp_rot[env_ids],
-            self.robot_local_grasp_pos[env_ids],
-            laptop_rot,
-            laptop_pos,
-            self.lid_local_push_rot[env_ids],
-            self.lid_local_push_pos[env_ids],
+
+        self.robot_grasp_pos[env_ids], self.robot_grasp_rot[env_ids] = combine_frame_transforms(
+            hand_pos, hand_rot, self.robot_local_grasp_pos[env_ids], self.robot_local_grasp_rot[env_ids]
         )
-
-    # def _compute_rewards(
-    #     self,
-    #     actions,
-    #     laptop_dof_pos,
-    #     franka_grasp_pos,
-    #     lid_push_pos,
-    #     franka_grasp_rot,
-    #     lid_push_rot,
-    #     franka_lfinger_pos,
-    #     franka_rfinger_pos,
-    #     gripper_forward_axis,
-    #     lid_close_axis,
-    #     gripper_up_axis,
-    #     lid_up_axis,
-    #     num_envs,
-    #     dist_reward_scale,
-    #     rot_reward_scale,
-    #     open_reward_scale,
-    #     action_penalty_scale,
-    #     finger_reward_scale,
-    #     joint_positions,
-    # ):
-        # # distance from hand to the laptop
-        # d = torch.linalg.norm(franka_grasp_pos - lid_push_pos, ord=2, dim=-1)
-        # dist_reward = 1.0 / (1.0 + d**2)
-        # dist_reward *= dist_reward
-        # dist_reward = torch.where(d <= 0.02, dist_reward * 2, dist_reward)
-
-        # axis1 = quat_apply(franka_grasp_rot, gripper_forward_axis)
-        # axis2 = quat_apply(lid_push_rot, lid_close_axis)
-        # axis3 = quat_apply(franka_grasp_rot, gripper_up_axis)
-        # axis4 = quat_apply(lid_push_rot, lid_up_axis)
-
-        # dot1 = (
-        #     torch.bmm(axis1.view(num_envs, 1, 3), axis2.view(num_envs, 3, 1)).squeeze(-1).squeeze(-1)
-        # )  # alignment of forward axis for gripper
-        # dot2 = (
-        #     torch.bmm(axis3.view(num_envs, 1, 3), axis4.view(num_envs, 3, 1)).squeeze(-1).squeeze(-1)
-        # )  # alignment of up axis for gripper
-        # # reward for matching the orientation of the hand to the laptop (fingers wrapped)
-        # rot_reward = 0.5 * (torch.sign(dot1) * dot1**2 + torch.sign(dot2) * dot2**2)
-
-        # # regularization on the actions (summed for each environment)
-        # action_penalty = torch.sum(actions**2, dim=-1)
-
-        # # how far the laptop has been closed
-        # open_reward = laptop_dof_pos[:, self.hinge_joint_idx]  # laptop_hinge_joint
-
-        # # penalty for distance of each finger from the laptop lid
-        # lfinger_dist = franka_lfinger_pos[:, 2] - lid_push_pos[:, 2]
-        # rfinger_dist = lid_push_pos[:, 2] - franka_rfinger_pos[:, 2]
-        # finger_dist_penalty = torch.zeros_like(lfinger_dist)
-        # finger_dist_penalty += torch.where(lfinger_dist < 0, lfinger_dist, torch.zeros_like(lfinger_dist))
-        # finger_dist_penalty += torch.where(rfinger_dist < 0, rfinger_dist, torch.zeros_like(rfinger_dist))
-
-        # rewards = (
-        #     dist_reward_scale * dist_reward
-        #     + rot_reward_scale * rot_reward
-        #     + open_reward_scale * open_reward
-        #     + finger_reward_scale * finger_dist_penalty
-        #     - action_penalty_scale * action_penalty
-        # )
-
-        # self.extras["log"] = {
-        #     "dist_reward": (dist_reward_scale * dist_reward).mean(),
-        #     "rot_reward": (rot_reward_scale * rot_reward).mean(),
-        #     "open_reward": (open_reward_scale * open_reward).mean(),
-        #     "action_penalty": (-action_penalty_scale * action_penalty).mean(),
-        #     "left_finger_distance_reward": (finger_reward_scale * lfinger_dist).mean(),
-        #     "right_finger_distance_reward": (finger_reward_scale * rfinger_dist).mean(),
-        #     "finger_dist_penalty": (finger_reward_scale * finger_dist_penalty).mean(),
-        # }
-
-        # # bonus for closing laptop properly
-        # laptop_pos = laptop_dof_pos[:, self.hinge_joint_idx]
-        # rewards = torch.where(laptop_pos > 0.01, rewards + 0.25, rewards)
-        # rewards = torch.where(laptop_pos > 0.2, rewards + 0.25, rewards)
-        # rewards = torch.where(laptop_pos > 0.35, rewards + 0.25, rewards)
-
-        # return rewards
-
-    def _compute_grasp_transforms(
-        self,
-        hand_rot,
-        hand_pos,
-        franka_local_grasp_rot,
-        franka_local_grasp_pos,
-        laptop_rot,
-        laptop_pos,
-        lid_local_push_rot,
-        lid_local_push_pos,
-    ):
-        global_franka_pos, global_franka_rot = combine_frame_transforms(
-            hand_pos, hand_rot, franka_local_grasp_pos, franka_local_grasp_rot
-        )
-        global_laptop_pos, global_laptop_rot = combine_frame_transforms(
-            laptop_pos, laptop_rot, lid_local_push_pos, lid_local_push_rot
-        )
-
-        return global_franka_rot, global_franka_pos, global_laptop_rot, global_laptop_pos

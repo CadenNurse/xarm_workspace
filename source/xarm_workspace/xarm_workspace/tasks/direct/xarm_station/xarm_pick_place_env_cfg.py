@@ -12,18 +12,16 @@ from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
-# from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.configclass import configclass
-from isaaclab.sensors import ContactSensorCfg
 
 
 @configclass
 class XarmPickPlaceEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 3.5  # 500 timesteps
+    episode_length_s = 5.0
     decimation = 2
     action_space = 8
-    observation_space = 31
+    observation_space = 33
     state_space = 0
 
     # simulation
@@ -94,27 +92,39 @@ class XarmPickPlaceEnvCfg(DirectRLEnvCfg):
         },
     )
 
-    # laptop
-    laptop = ArticulationCfg(
-        prim_path="/World/envs/env_.*/Laptop",
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=f"/home/cadennurse/Documents/isaac_lab_test/thinkpad_x13_gen1_REAL.usd",
-            activate_contact_sensors=True,
-        ),
-        init_state=ArticulationCfg.InitialStateCfg(
-            pos=(0.40, 0.80, 0.80),
-            rot=(0.0, 0.0, 0.0, 1.0),
-            joint_pos={"hinge_joint": 1.1},
-        ),
-        actuators={
-            "hinge": ImplicitActuatorCfg(
-                joint_names_expr=["hinge_joint"],
-                effort_limit_sim=10.0,
-                stiffness=0.0,
-                damping=0.25,
-                friction=1.8,
+    # pick-and-place object: 3cm deep (x), 7cm wide (y), 12cm tall (z)
+    object_size = (0.03, 0.07, 0.12)
+    obj = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/Object",
+        spawn=sim_utils.CuboidCfg(
+            size=object_size,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=False,
+                max_depenetration_velocity=5.0,
             ),
-        },
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.15),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.65, 0.2, 0.2)),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(
+            pos=(0.40, 0.80, 0.86),
+            rot=(0.0, 0.0, 0.0, 1.0),
+        ),
+    )
+
+    # fixed visual marker at the place target (no collision, kinematic, never randomized)
+    place_marker = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/PlaceMarker",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.10, 0.10, 0.002),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.2, 0.65, 0.25), opacity=0.5),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(
+            pos=(0.15, 0.55, 0.801),
+            rot=(0.0, 0.0, 0.0, 1.0),
+        ),
     )
 
     # table
@@ -129,88 +139,8 @@ class XarmPickPlaceEnvCfg(DirectRLEnvCfg):
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=(0.0, 0.0, 0.0),
             rot=(0.0, 0.0, 0.0, 1.0),
-
         ),
     )
-
-    # contact sensors
-    # link2_contact = ContactSensorCfg(
-    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link2",
-    #     update_period=0.0,
-    #     history_length=1,
-    #     debug_vis=False,
-    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
-    # )
-    # link3_contact = ContactSensorCfg(
-    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link3",
-    #     update_period=0.0,
-    #     history_length=1,
-    #     debug_vis=False,
-    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
-    # )
-    # link4_contact = ContactSensorCfg(
-    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link4",
-    #     update_period=0.0,
-    #     history_length=1,
-    #     debug_vis=False,
-    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
-    # )
-    # link5_contact = ContactSensorCfg(
-    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link5",
-    #     update_period=0.0,
-    #     history_length=1,
-    #     debug_vis=False,
-    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
-    # )
-    # link6_contact = ContactSensorCfg(
-    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link6",
-    #     update_period=0.0,
-    #     history_length=1,
-    #     debug_vis=False,
-    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
-    # )
-    # link7_contact = ContactSensorCfg(
-    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/link7",
-    #     update_period=0.0,
-    #     history_length=1,
-    #     debug_vis=False,
-    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
-    # )
-    # gripper_base_contact = ContactSensorCfg(
-    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/gripper/xarm_gripper_base_link",
-    #     update_period=0.0,
-    #     history_length=1,
-    #     debug_vis=False,
-    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
-    # )
-    # right_outer_contact = ContactSensorCfg(
-    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/gripper/right_outer_knuckle",
-    #     update_period=0.0,
-    #     history_length=1,
-    #     debug_vis=False,
-    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
-    # )
-    # left_outer_contact = ContactSensorCfg(
-    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/gripper/left_outer_knuckle",
-    #     update_period=0.0,
-    #     history_length=1,
-    #     debug_vis=False,
-    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
-    # )
-    # right_finger_contact = ContactSensorCfg(
-    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/gripper/right_finger",
-    #     update_period=0.0,
-    #     history_length=1,
-    #     debug_vis=False,
-    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
-    # )
-    # left_finger_contact = ContactSensorCfg(
-    #     prim_path="/World/envs/env_.*/Robot/xarm7_L/gripper/left_finger",
-    #     update_period=0.0,
-    #     history_length=1,
-    #     debug_vis=False,
-    #     filter_prim_paths_expr=["/World/envs/env_.*/Workstation"],
-    # )
 
     # ground plane
     terrain = TerrainImporterCfg(
@@ -229,22 +159,26 @@ class XarmPickPlaceEnvCfg(DirectRLEnvCfg):
     action_scale = 7.5
     dof_velocity_scale = 0.1
 
+    # table / workspace geometry
+    table_surface_height = 0.80
+    object_pos_x_range = (0.15, 0.55)
+    object_pos_y_range = (-0.10, 0.80)
+
+    # fixed place target (env-local, never randomized)
+    place_target_pos = (0.15, 0.55, 0.801 + 0.06)  # + half object height
+
     # reward scales
-    reach_reward_scale = 1.0
-    close_reward_scale = 12.0
+    near_object_reward_scale = 1.0
+    close_reward_scale = 4.0
+    lift_reward_scale = 6.0
+    near_target_reward_scale = 3.0
+    place_bonus_scale = 20.0
+    drop_penalty_scale = 4.0
     action_penalty_scale = 0.02
-    success_bonus_scale = 18.0
-    close_vel_reward_scale = 5.0
-    fast_close_penalty_scale = 3.0
-    overshoot_penalty_scale = 8.0
-    workstation_contact_penalty_scale = 0.3
 
-    finger_reach_reward_scale = 1.0
-    finger_close_bonus_scale = 2.0
-    body_push_penalty_scale = 2.5
-
-    target_lid_angle = 0.20
-
-    # success criteria
-    success_lid_angle_threshold : float = 0.30
-    """laptop joint position below which the lid is considered successfully closed [rads]."""
+    # thresholds
+    grasp_dist_threshold = 0.06
+    gripper_close_threshold = 0.5
+    lift_height_threshold = 0.05
+    place_dist_threshold = 0.04
+    place_height_threshold = 0.03
