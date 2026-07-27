@@ -16,11 +16,11 @@ from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.utils.stage import get_current_stage
 from isaaclab.utils.math import combine_frame_transforms, quat_apply, quat_conjugate, sample_uniform
 
-from .xarm_laptop_env_cfg import XarmLaptopEnvCfg  
+from .xarm_station_env_cfg import XarmStationEnvCfg  
 
 
 
-class XarmLaptopEnv(DirectRLEnv):
+class XarmStationEnv(DirectRLEnv):
     # pre-physics step calls
     #   |-- _pre_physics_step(action)
     #   |-- _apply_action()
@@ -30,9 +30,9 @@ class XarmLaptopEnv(DirectRLEnv):
     #   |-- _reset_idx(env_ids)
     #   |-- _get_observations()
 
-    cfg: XarmLaptopEnvCfg
+    cfg: XarmStationEnvCfg
 
-    def __init__(self, cfg: XarmLaptopEnvCfg, render_mode: str | None = None, **kwargs):
+    def __init__(self, cfg: XarmStationEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
 
         def get_env_local_pose(env_pos: torch.Tensor, xformable: UsdGeom.Xformable, device: torch.device):
@@ -271,16 +271,19 @@ class XarmLaptopEnv(DirectRLEnv):
 
         # restore laptop base to original pose
         laptop_root_pose = self._laptop.data.default_root_state.torch[env_ids, :7].clone()
-        laptop_root_pose[:, 0:3] += self.scene.env_origins[env_ids]
         laptop_root_vel = torch.zeros_like(self._laptop.data.default_root_state.torch[env_ids, 7:])
+        base_link_pos = self._laptop.data.body_pos_w.torch[:, self.base_link_idx]
 
         self._laptop.write_root_pose_to_sim(laptop_root_pose, env_ids=env_ids)
         self._laptop.write_root_velocity_to_sim(laptop_root_vel, env_ids=env_ids)
 
         # laptop state
-        laptop_joint_pos = self._laptop.data.default_joint_pos.torch[env_ids].clone()
+        laptop_joint_pos = torch.full(
+            (len(env_ids), self._laptop.num_joints),
+            self.cfg.start_lid_angle,
+            device=self.device,
+        )
         laptop_joint_vel = torch.zeros_like(laptop_joint_pos)
-        laptop_joint_pos[:, self.hinge_joint_idx] = self.cfg.start_lid_angle
 
         # replace below if getting index issues
         # self._laptop.write_joint_position_to_sim(position=laptop_joint_pos, env_ids=env_ids)

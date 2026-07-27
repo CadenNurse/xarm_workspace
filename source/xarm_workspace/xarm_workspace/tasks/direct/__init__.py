@@ -28,3 +28,12 @@ gym.register(
         "skrl_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_laptop.agents:skrl_ppo_cfg.yaml",
     },
 )
+gym.register(
+    id="Isaac-Xarm-Station-Direct-v0",
+    entry_point="xarm_workspace.tasks.direct.xarm_station.xarm_station_env:XarmStationEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_station.xarm_station_env_cfg:XarmStationEnvCfg",
+        "skrl_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_station.agents:skrl_ppo_cfg.yaml",
+    },
+)
