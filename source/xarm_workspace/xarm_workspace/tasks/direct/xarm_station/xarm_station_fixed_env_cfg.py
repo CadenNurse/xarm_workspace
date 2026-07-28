@@ -104,7 +104,7 @@ class XarmStationFixedEnvCfg(DirectRLEnvCfg):
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.40, 0.80, 0.80),
             rot=(0.0, 0.0, 0.0, 1.0),
-            joint_pos={"hinge_joint": 1.3},
+            joint_pos={"hinge_joint": 1.4},
         ),
         actuators={
             "hinge": ImplicitActuatorCfg(
@@ -162,7 +162,7 @@ class XarmStationFixedEnvCfg(DirectRLEnvCfg):
     # reward scales
     reach_reward_scale = 3.0   # how close the robot is
     close_reward_scale = 18.0   # rewarding closing progress
-    success_bonus_scale = 80.0
+    success_bonus_scale = 70.0   # OPTIMUM
     close_vel_reward_scale = 6.0   # rewarding closing progress
     fast_close_penalty_scale = 4.0
 
