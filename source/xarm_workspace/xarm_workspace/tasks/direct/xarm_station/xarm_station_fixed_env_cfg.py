@@ -41,7 +41,7 @@ class XarmStationFixedEnvCfg(DirectRLEnvCfg):
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
-        num_envs=100, env_spacing=2.5, replicate_physics=True, clone_in_fabric=True
+        num_envs=169, env_spacing=2.5, replicate_physics=True, clone_in_fabric=True
     )
 
     # robot
@@ -162,7 +162,7 @@ class XarmStationFixedEnvCfg(DirectRLEnvCfg):
     # reward scales
     reach_reward_scale = 3.0   # how close the robot is
     close_reward_scale = 18.0   # rewarding closing progress
-    success_bonus_scale = 70.0
+    success_bonus_scale = 80.0
     close_vel_reward_scale = 6.0   # rewarding closing progress
     fast_close_penalty_scale = 4.0
 

@@ -222,9 +222,6 @@ class XarmStationFixedEnv(DirectRLEnv):
 
         fast_close_penalty = torch.square(torch.clamp(-hinge_vel, min=0.0))
 
-        # overshoot = torch.clamp(self.cfg.target_lid_angle - hinge_pos, min=0.0)
-        # overshoot_penalty = overshoot * overshoot
-
         success_bonus = torch.where(
             hinge_pos <= self.cfg.success_lid_angle_threshold,
             torch.ones_like(hinge_pos),
@@ -262,7 +259,6 @@ class XarmStationFixedEnv(DirectRLEnv):
             - self.cfg.body_push_penalty_scale * body_push_penalty
             - self.cfg.action_penalty_scale * action_penalty
             - self.cfg.fast_close_penalty_scale * fast_close_penalty
-            # - self.cfg.overshoot_penalty_scale * overshoot_penalty
             + self.cfg.success_bonus_scale * success_bonus
         )
 
@@ -276,7 +272,6 @@ class XarmStationFixedEnv(DirectRLEnv):
             "close_reward": (self.cfg.close_reward_scale * close_reward).mean(),
             "close_vel_reward": (self.cfg.close_vel_reward_scale * moving_closed_reward).mean(),
             "fast_close_penalty": (-self.cfg.fast_close_penalty_scale * fast_close_penalty).mean(),
-            # "overshoot_penalty": (-self.cfg.overshoot_penalty_scale * overshoot_penalty).mean(),
             "action_penalty": (-self.cfg.action_penalty_scale * action_penalty).mean(),
             "finger_reach_reward": (self.cfg.finger_reach_reward_scale * finger_reach_reward).mean(),
             "body_push_penalty": (-self.cfg.body_push_penalty_scale * body_push_penalty).mean(),
