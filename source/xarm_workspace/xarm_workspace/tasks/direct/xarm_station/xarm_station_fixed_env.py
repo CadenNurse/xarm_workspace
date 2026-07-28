@@ -12,13 +12,12 @@ from pxr import UsdGeom
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation, RigidObject
-from isaaclab.sensors import ContactSensor
+# from isaaclab.sensors import ContactSensor
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.utils.stage import get_current_stage
 from isaaclab.utils.math import combine_frame_transforms, quat_apply, quat_conjugate, sample_uniform
 
-from .xarm_station_fixed_env_cfg import XarmStationFixedEnvCfg  
-
+from .xarm_station_fixed_env_cfg import XarmStationFixedEnvCfg
 
 
 class XarmStationFixedEnv(DirectRLEnv):
@@ -32,6 +31,11 @@ class XarmStationFixedEnv(DirectRLEnv):
     #   |-- _get_observations()
 
     cfg: XarmStationFixedEnvCfg
+
+    # task phases
+    PHASE_CLOSE = 0
+    PHASE_RETRACT = 1
+    PHASE_RETURN = 2
 
     def __init__(self, cfg: XarmStationFixedEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
@@ -130,9 +134,17 @@ class XarmStationFixedEnv(DirectRLEnv):
         self.robot_grasp_pos = torch.zeros((self.num_envs, 3), device=self.device)
         self.lid_push_rot = torch.zeros((self.num_envs, 4), device=self.device)
         self.lid_push_pos = torch.zeros((self.num_envs, 3), device=self.device)
+        self.prev_hinge_pos = torch.zeros(self.num_envs, device=self.device)
 
         # Sticky per-env flag: True once the lid was closed past the success threshold.
         self._episode_succeeded = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+
+        # --- task-phase / return-home state ---
+        self.task_phase = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self.home_joint_pos = torch.zeros((self.num_envs, len(self.control_joint_ids)), device=self.device)
+        self.close_step_buf = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self._episode_returned_home = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+
 
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot)
@@ -182,10 +194,13 @@ class XarmStationFixedEnv(DirectRLEnv):
     # post-physics step calls
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
+        self._compute_intermediate_values()
+
         hinge_pos = self._laptop.data.joint_pos.torch[:, self.hinge_joint_idx]
-        success = hinge_pos <= self.cfg.success_lid_angle_threshold
-        too_early = self.episode_length_buf < 30
-        terminated = success & ~too_early
+        lid_closed = hinge_pos <= self.cfg.success_lid_angle_threshold
+
+        too_early = self.episode_length_buf < 20
+        terminated = lid_closed & ~too_early
         truncated = self.episode_length_buf >= self.max_episode_length - 1
         return terminated, truncated
 
@@ -200,15 +215,6 @@ class XarmStationFixedEnv(DirectRLEnv):
         reach_reward = 1.0 / (1.0 + d * d)
         reach_reward = reach_reward * reach_reward
 
-        close_reward = -hinge_error
-        action_penalty = torch.sum(self.actions ** 2, dim=-1)
-
-        fast_close_penalty = torch.square(torch.clamp(-hinge_vel, min=0.0))
-
-        overshoot = torch.clamp(self.cfg.target_lid_angle - hinge_pos, min=0.0)
-        overshoot_penalty = overshoot * overshoot
-
-        # finger reward, body penalty
         lfinger_pos = self._robot.data.body_pos_w.torch[:, self.left_finger_link_idx]
         rfinger_pos = self._robot.data.body_pos_w.torch[:, self.right_finger_link_idx]
 
@@ -220,34 +226,12 @@ class XarmStationFixedEnv(DirectRLEnv):
         finger_reach_reward = 1.0 / (1.0 + finger_mid_dist * finger_mid_dist)
         finger_reach_reward = finger_reach_reward * finger_reach_reward
 
-        fingers_near_lid = ((lfinger_dist < 0.05) & (rfinger_dist < 0.05)).float()
-        finger_close_bonus = fingers_near_lid * torch.clamp(-hinge_vel, min=0.0)
+        close_contact_gate = (finger_mid_dist < self.cfg.close_contact_dist).float()
 
-        body_push_penalty = (
-            (d < 0.05) &
-            ((lfinger_dist > 0.07) | (rfinger_dist > 0.07))
-        ).float()
+        hinge_progress = torch.clamp(self.prev_hinge_pos - hinge_pos, min=0.0)
+        hinge_progress_reward = hinge_progress / max(self.cfg.progress_norm, 1e-6)
 
-        # contact penalty
-        # workstation_hit = (
-        #     self._sensor_hit("link2_contact")
-        #     | self._sensor_hit("link3_contact")
-        #     | self._sensor_hit("link4_contact")
-        #     | self._sensor_hit("link5_contact")
-        #     | self._sensor_hit("link6_contact")
-        #     | self._sensor_hit("link7_contact")
-        #     | self._sensor_hit("gripper_base_contact")
-        #     | self._sensor_hit("right_outer_contact")
-        #     | self._sensor_hit("left_outer_contact")
-        #     | self._sensor_hit("right_finger_contact")
-        #     | self._sensor_hit("left_finger_contact")
-        # ).float()
-
-        success_bonus = torch.where(
-            hinge_pos <= self.cfg.success_lid_angle_threshold,
-            torch.ones_like(hinge_pos),
-            torch.zeros_like(hinge_pos),
-        )
+        close_reward = -hinge_error * (0.2 + 0.8 * close_contact_gate)
 
         moving_closed_reward = torch.where(
             hinge_vel < 0.0,
@@ -255,39 +239,55 @@ class XarmStationFixedEnv(DirectRLEnv):
             torch.zeros_like(hinge_vel),
         )
 
+        body_push_penalty = (
+            (d < self.cfg.body_push_dist) &
+            ((lfinger_dist > self.cfg.body_push_finger_far_dist) | (rfinger_dist > self.cfg.body_push_finger_far_dist))
+        ).float()
+
+        action_penalty = torch.sum(self.actions ** 2, dim=-1)
+        fast_close_penalty = torch.square(torch.clamp(-hinge_vel, min=0.0))
+
+        overshoot = torch.clamp(self.cfg.target_lid_angle - hinge_pos, min=0.0)
+        overshoot_penalty = overshoot * overshoot
+
+        lid_closed = hinge_pos <= self.cfg.success_lid_angle_threshold
+        success_bonus = lid_closed.float()
+
         total_reward = (
             self.cfg.reach_reward_scale * reach_reward
-            + self.cfg.close_reward_scale * close_reward
-            + self.cfg.close_vel_reward_scale * moving_closed_reward
             + self.cfg.finger_reach_reward_scale * finger_reach_reward
-            + self.cfg.finger_close_bonus_scale * finger_close_bonus
+            + self.cfg.close_reward_scale * close_reward
+            + self.cfg.hinge_progress_reward_scale * hinge_progress_reward
+            + self.cfg.close_vel_reward_scale * moving_closed_reward
+            + self.cfg.success_bonus_scale * success_bonus
             - self.cfg.body_push_penalty_scale * body_push_penalty
-            - self.cfg.action_penalty_scale * action_penalty
             - self.cfg.fast_close_penalty_scale * fast_close_penalty
             - self.cfg.overshoot_penalty_scale * overshoot_penalty
-            # - self.cfg.workstation_contact_penalty_scale * workstation_hit
-            + self.cfg.success_bonus_scale * success_bonus
+            - self.cfg.action_penalty_scale * action_penalty
         )
 
-        self._episode_succeeded |= hinge_pos <= self.cfg.success_lid_angle_threshold
+        self._episode_succeeded |= lid_closed
+        self.prev_hinge_pos[:] = hinge_pos
 
         self.extras["log"] = {
             "hinge_pos": hinge_pos.mean(),
             "hinge_error": hinge_error.mean(),
             "hinge_vel": hinge_vel.mean(),
+            "hinge_progress_reward": (self.cfg.hinge_progress_reward_scale * hinge_progress_reward).mean(),
             "reach_reward": (self.cfg.reach_reward_scale * reach_reward).mean(),
+            "finger_reach_reward": (self.cfg.finger_reach_reward_scale * finger_reach_reward).mean(),
             "close_reward": (self.cfg.close_reward_scale * close_reward).mean(),
             "close_vel_reward": (self.cfg.close_vel_reward_scale * moving_closed_reward).mean(),
+            "success_bonus": (self.cfg.success_bonus_scale * success_bonus).mean(),
+            "body_push_penalty": (-self.cfg.body_push_penalty_scale * body_push_penalty).mean(),
             "fast_close_penalty": (-self.cfg.fast_close_penalty_scale * fast_close_penalty).mean(),
             "overshoot_penalty": (-self.cfg.overshoot_penalty_scale * overshoot_penalty).mean(),
             "action_penalty": (-self.cfg.action_penalty_scale * action_penalty).mean(),
-            # "contact_penalty": (- self.cfg.workstation_contact_penalty_scale * workstation_hit).mean(),
-            "finger_reach_reward": (self.cfg.finger_reach_reward_scale * finger_reach_reward).mean(),
-            "finger_close_bonus": (self.cfg.finger_close_bonus_scale * finger_close_bonus).mean(),
-            "body_push_penalty": (-self.cfg.body_push_penalty_scale * body_push_penalty).mean(),
             "lfinger_dist": lfinger_dist.mean(),
             "rfinger_dist": rfinger_dist.mean(),
-            "success_bonus": (self.cfg.success_bonus_scale * success_bonus).mean(),
+            "finger_mid_dist": finger_mid_dist.mean(),
+            "close_contact_gate": close_contact_gate.mean(),
+            "lid_closed_frac": lid_closed.float().mean(),
             "total_reward": total_reward.mean(),
         }
 
@@ -300,8 +300,13 @@ class XarmStationFixedEnv(DirectRLEnv):
         laptop_pos = self._laptop.data.joint_pos.torch[env_ids, self.hinge_joint_idx]
         log = self.extras.setdefault("log", {})
         log["Metrics/success_rate"] = self._episode_succeeded[env_ids].float().mean().item()
+        log["Metrics/return_home_rate"] = self._episode_returned_home[env_ids].float().mean().item()
         log["Metrics/laptop_pos"] = laptop_pos.mean().item()
+        log["Metrics/mean_home_err"] = self._home_joint_error()[env_ids].mean().item()
+        log["Metrics/phase_return_frac"] = (self.task_phase[env_ids] == self.PHASE_RETURN).float().mean().item()
+        log["Metrics/phase_retract_frac"] = (self.task_phase[env_ids] == self.PHASE_RETRACT).float().mean().item()
         self._episode_succeeded[env_ids] = False
+        self._episode_returned_home[env_ids] = False
 
         super()._reset_idx(env_ids)
         # robot state
@@ -328,6 +333,11 @@ class XarmStationFixedEnv(DirectRLEnv):
         self._robot.write_joint_position_to_sim(position=joint_pos, joint_ids=self.control_joint_ids, env_ids=env_ids)
         self._robot.write_joint_velocity_to_sim(velocity=joint_vel, joint_ids=self.control_joint_ids, env_ids=env_ids)
 
+        # --- store this episode's start pose as the "home" pose to return to ---
+        self.home_joint_pos[env_ids] = joint_pos
+        self.task_phase[env_ids] = self.PHASE_CLOSE
+        self.close_step_buf[env_ids] = 0
+
         # restore laptop base to original pose
         laptop_root_pose = self._laptop.data.default_root_state.torch[env_ids, :7].clone()
         laptop_root_pose[:, 0:3] += self.scene.env_origins[env_ids]
@@ -345,6 +355,8 @@ class XarmStationFixedEnv(DirectRLEnv):
         # self._laptop.write_joint_velocity_to_sim(velocity=laptop_joint_vel, env_ids=env_ids)
         self._laptop.write_joint_position_to_sim_index(position=laptop_joint_pos, env_ids=env_ids)
         self._laptop.write_joint_velocity_to_sim_index(velocity=laptop_joint_vel, env_ids=env_ids)
+
+        self.prev_hinge_pos[env_ids] = laptop_joint_pos[:, self.hinge_joint_idx]
 
         # Need to refresh the intermediate values so that _get_observations() can use the latest values
         self._compute_intermediate_values(env_ids)
@@ -372,12 +384,28 @@ class XarmStationFixedEnv(DirectRLEnv):
 
     # auxiliary methods
 
-    def _sensor_hit(self, sensor_name: str, threshold: float = 1.0):
-        sensor = self.scene.sensors[sensor_name]
-        forces = sensor.data.force_matrix_w
-        mag = torch.linalg.norm(forces, dim=-1)
+    # def _sensor_hit(self, sensor_name: str, threshold: float = 1.0):
+    #     sensor = self.scene.sensors[sensor_name]
+    #     forces = sensor.data.force_matrix_w
+    #     mag = torch.linalg.norm(forces, dim=-1)
 
-        return mag.amax(dim=-1) > threshold
+    #     return mag.amax(dim=-1) > threshold
+
+    def _home_joint_error(self) -> torch.Tensor:
+        robot_joint_pos = self._robot.data.joint_pos.torch[:, self.control_joint_ids]
+        return torch.linalg.norm(robot_joint_pos - self.home_joint_pos, dim=-1)
+
+    def _update_task_phase(self):
+        """Advance per-env task phase: CLOSE -> RETRACT -> RETURN."""
+        hinge_pos = self._laptop.data.joint_pos.torch[:, self.hinge_joint_idx]
+
+        just_closed = (hinge_pos <= self.cfg.success_lid_angle_threshold) & (self.task_phase == self.PHASE_CLOSE)
+        self.task_phase[just_closed] = self.PHASE_RETRACT
+        self.close_step_buf[just_closed] = self.episode_length_buf[just_closed]
+
+        retract_elapsed = self.episode_length_buf - self.close_step_buf
+        retract_done = (self.task_phase == self.PHASE_RETRACT) & (retract_elapsed > self.cfg.retract_steps)
+        self.task_phase[retract_done] = self.PHASE_RETURN
 
     def _compute_intermediate_values(self, env_ids: torch.Tensor | None = None):
         if env_ids is None:
