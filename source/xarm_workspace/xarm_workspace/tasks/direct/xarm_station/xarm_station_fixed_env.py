@@ -145,6 +145,8 @@ class XarmStationFixedEnv(DirectRLEnv):
         self.close_step_buf = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self._episode_returned_home = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
+        # action tracking
+        self.prev_actions = torch.zeros((self.num_envs, len(self.control_joint_ids)), device=self.device)
 
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot)
@@ -215,6 +217,27 @@ class XarmStationFixedEnv(DirectRLEnv):
         reach_reward = 1.0 / (1.0 + d * d)
         reach_reward = reach_reward * reach_reward
 
+        close_reward = -hinge_error
+        action_penalty = torch.sum(self.actions ** 2, dim=-1)
+
+        fast_close_penalty = torch.square(torch.clamp(-hinge_vel, min=0.0))
+
+        # overshoot = torch.clamp(self.cfg.target_lid_angle - hinge_pos, min=0.0)
+        # overshoot_penalty = overshoot * overshoot
+
+        success_bonus = torch.where(
+            hinge_pos <= self.cfg.success_lid_angle_threshold,
+            torch.ones_like(hinge_pos),
+            torch.zeros_like(hinge_pos),
+        )
+
+        moving_closed_reward = torch.where(
+            hinge_vel < 0.0,
+            -hinge_vel,
+            torch.zeros_like(hinge_vel),
+        )
+
+        # finger reward, body penalty
         lfinger_pos = self._robot.data.body_pos_w.torch[:, self.left_finger_link_idx]
         rfinger_pos = self._robot.data.body_pos_w.torch[:, self.right_finger_link_idx]
 
@@ -226,68 +249,40 @@ class XarmStationFixedEnv(DirectRLEnv):
         finger_reach_reward = 1.0 / (1.0 + finger_mid_dist * finger_mid_dist)
         finger_reach_reward = finger_reach_reward * finger_reach_reward
 
-        close_contact_gate = (finger_mid_dist < self.cfg.close_contact_dist).float()
-
-        hinge_progress = torch.clamp(self.prev_hinge_pos - hinge_pos, min=0.0)
-        hinge_progress_reward = hinge_progress / max(self.cfg.progress_norm, 1e-6)
-
-        close_reward = -hinge_error * (0.2 + 0.8 * close_contact_gate)
-
-        moving_closed_reward = torch.where(
-            hinge_vel < 0.0,
-            -hinge_vel,
-            torch.zeros_like(hinge_vel),
-        )
-
         body_push_penalty = (
-            (d < self.cfg.body_push_dist) &
-            ((lfinger_dist > self.cfg.body_push_finger_far_dist) | (rfinger_dist > self.cfg.body_push_finger_far_dist))
+            (d < 0.05) &
+            ((lfinger_dist > 0.06) | (rfinger_dist > 0.06))
         ).float()
-
-        action_penalty = torch.sum(self.actions ** 2, dim=-1)
-        fast_close_penalty = torch.square(torch.clamp(-hinge_vel, min=0.0))
-
-        overshoot = torch.clamp(self.cfg.target_lid_angle - hinge_pos, min=0.0)
-        overshoot_penalty = overshoot * overshoot
-
-        lid_closed = hinge_pos <= self.cfg.success_lid_angle_threshold
-        success_bonus = lid_closed.float()
 
         total_reward = (
             self.cfg.reach_reward_scale * reach_reward
-            + self.cfg.finger_reach_reward_scale * finger_reach_reward
             + self.cfg.close_reward_scale * close_reward
-            + self.cfg.hinge_progress_reward_scale * hinge_progress_reward
             + self.cfg.close_vel_reward_scale * moving_closed_reward
-            + self.cfg.success_bonus_scale * success_bonus
+            + self.cfg.finger_reach_reward_scale * finger_reach_reward
             - self.cfg.body_push_penalty_scale * body_push_penalty
-            - self.cfg.fast_close_penalty_scale * fast_close_penalty
-            - self.cfg.overshoot_penalty_scale * overshoot_penalty
             - self.cfg.action_penalty_scale * action_penalty
+            - self.cfg.fast_close_penalty_scale * fast_close_penalty
+            # - self.cfg.overshoot_penalty_scale * overshoot_penalty
+            + self.cfg.success_bonus_scale * success_bonus
         )
 
-        self._episode_succeeded |= lid_closed
-        self.prev_hinge_pos[:] = hinge_pos
+        self._episode_succeeded |= hinge_pos <= self.cfg.success_lid_angle_threshold
 
         self.extras["log"] = {
             "hinge_pos": hinge_pos.mean(),
             "hinge_error": hinge_error.mean(),
             "hinge_vel": hinge_vel.mean(),
-            "hinge_progress_reward": (self.cfg.hinge_progress_reward_scale * hinge_progress_reward).mean(),
             "reach_reward": (self.cfg.reach_reward_scale * reach_reward).mean(),
-            "finger_reach_reward": (self.cfg.finger_reach_reward_scale * finger_reach_reward).mean(),
             "close_reward": (self.cfg.close_reward_scale * close_reward).mean(),
             "close_vel_reward": (self.cfg.close_vel_reward_scale * moving_closed_reward).mean(),
-            "success_bonus": (self.cfg.success_bonus_scale * success_bonus).mean(),
-            "body_push_penalty": (-self.cfg.body_push_penalty_scale * body_push_penalty).mean(),
             "fast_close_penalty": (-self.cfg.fast_close_penalty_scale * fast_close_penalty).mean(),
-            "overshoot_penalty": (-self.cfg.overshoot_penalty_scale * overshoot_penalty).mean(),
+            # "overshoot_penalty": (-self.cfg.overshoot_penalty_scale * overshoot_penalty).mean(),
             "action_penalty": (-self.cfg.action_penalty_scale * action_penalty).mean(),
+            "finger_reach_reward": (self.cfg.finger_reach_reward_scale * finger_reach_reward).mean(),
+            "body_push_penalty": (-self.cfg.body_push_penalty_scale * body_push_penalty).mean(),
             "lfinger_dist": lfinger_dist.mean(),
             "rfinger_dist": rfinger_dist.mean(),
-            "finger_mid_dist": finger_mid_dist.mean(),
-            "close_contact_gate": close_contact_gate.mean(),
-            "lid_closed_frac": lid_closed.float().mean(),
+            "success_bonus": (self.cfg.success_bonus_scale * success_bonus).mean(),
             "total_reward": total_reward.mean(),
         }
 
@@ -357,6 +352,7 @@ class XarmStationFixedEnv(DirectRLEnv):
         self._laptop.write_joint_velocity_to_sim_index(velocity=laptop_joint_vel, env_ids=env_ids)
 
         self.prev_hinge_pos[env_ids] = laptop_joint_pos[:, self.hinge_joint_idx]
+        self.prev_actions[env_ids] = 0.0
 
         # Need to refresh the intermediate values so that _get_observations() can use the latest values
         self._compute_intermediate_values(env_ids)

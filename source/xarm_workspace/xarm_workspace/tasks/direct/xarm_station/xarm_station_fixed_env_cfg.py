@@ -156,45 +156,26 @@ class XarmStationFixedEnvCfg(DirectRLEnvCfg):
         ),
     )
 
-    action_scale = 6.0
+    action_scale = 5.5
     dof_velocity_scale = 0.1
 
-    # reward scales — closing phase
-    reach_reward_scale = 0.6
-    close_reward_scale = 15.0
-    success_bonus_scale = 50.0
-    hinge_progress_reward_scale = 30.0
-    close_vel_reward_scale = 5.0
+    # reward scales
+    reach_reward_scale = 3.0   # how close the robot is
+    close_reward_scale = 18.0   # rewarding closing progress
+    success_bonus_scale = 70.0
+    close_vel_reward_scale = 6.0   # rewarding closing progress
+    fast_close_penalty_scale = 4.0
 
-    fast_close_penalty_scale = 1.5
-    overshoot_penalty_scale = 6.0
-    # workstation_contact_penalty_scale = 0.3
-    action_penalty_scale = 0.002
+    # body, finger rewards
+    finger_reach_reward_scale = 3.8   # how close fingers are
+    body_push_penalty_scale = 4.2
 
-    finger_reach_reward_scale = 1.0
-    finger_close_bonus_scale = 6.0
-    body_push_penalty_scale = 2.5
+    # penaltys
+    action_penalty_scale = 0.02
+    # overshoot_penalty_scale = 5.0
 
-    # reward scales — retract phase
-    retract_steps = 8
-    retract_target_distance = 0.06
-    retract_reward_scale = 4.0
-
-    # reward scales — return-home phase
-    return_home_reward_scale = 12.0
-    return_success_bonus_scale = 60.0
-    home_joint_tolerance = 0.18
-    home_reward_k = 3.0
-
-    target_lid_angle = 0.20
+    target_lid_angle = 0.25
 
     # success criteria
-    success_lid_angle_threshold: float = 0.25
-
-    # geometric thresholds for reward gating
-    close_contact_dist = 0.06
-    finger_near_dist = 0.06
-    body_push_dist = 0.05
-    body_push_finger_far_dist = 0.08
-    progress_norm = 0.02
+    success_lid_angle_threshold : float = 0.30
     """laptop joint position below which the lid is considered successfully closed [rads]."""
