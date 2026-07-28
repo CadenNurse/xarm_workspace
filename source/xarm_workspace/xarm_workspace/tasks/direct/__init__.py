@@ -5,53 +5,59 @@
 
 import gymnasium as gym  # noqa: F401
 
+# xarm_workspace/tasks/direct/__init__.py
+
+from . import xarm_cabinet
+from . import xarm_laptop
+from . import xarm_station
+from . import xarm_pick_place
 
 ##
 # Register Gym environments.
 ##
 
-gym.register(
-    id="Isaac-Xarm-Workspace-Direct-v0",
-    entry_point="xarm_workspace.tasks.direct.xarm_cabinet.xarm_workspace_env:XarmWorkspaceEnv",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_cabinet.xarm_workspace_env_cfg:XarmWorkspaceEnvCfg",
-        "skrl_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_cabinet.agents:skrl_ppo_cfg.yaml",
-    },
-)
-gym.register(
-    id="Isaac-Xarm-Laptop-Direct-v0",
-    entry_point="xarm_workspace.tasks.direct.xarm_laptop.xarm_laptop_env:XarmLaptopEnv",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_laptop.xarm_laptop_env_cfg:XarmLaptopEnvCfg",
-        "skrl_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_laptop.agents:skrl_ppo_cfg.yaml",
-    },
-)
-gym.register(
-    id="Isaac-Xarm-Station-Direct-v0",
-    entry_point="xarm_workspace.tasks.direct.xarm_station.xarm_station_env:XarmStationEnv",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_station.xarm_station_env_cfg:XarmStationEnvCfg",
-        "skrl_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_station.agents:skrl_ppo_cfg.yaml",
-    },
-)
-gym.register(
-    id="Isaac-Xarm-Pick-Place-Direct-v0",
-    entry_point="xarm_workspace.tasks.direct.xarm_pick_place.xarm_pick_place_env:XarmPickPlaceEnv",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_pick_place.xarm_pick_place_env_cfg:XarmPickPlaceEnvCfg",
-        "skrl_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_pick_place.agents:skrl_ppo_cfg.yaml",
-    },
-)
-gym.register(
-    id="Isaac-Xarm-Station-Fixed-Direct-v0",
-    entry_point="xarm_workspace.tasks.direct.xarm_station.xarm_station_fixed_env:XarmStationFixedEnv",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_station.xarm_station_fixed_env_cfg:XarmStationFixedEnvCfg",
-        "skrl_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_station.agents:skrl_ppo_cfg.yaml",
-    },
-)
+# gym.register(
+#     id="Isaac-Xarm-Workspace-Direct-v0",
+#     entry_point="xarm_workspace.tasks.direct.xarm_cabinet.xarm_workspace_env:XarmWorkspaceEnv",
+#     disable_env_checker=True,
+#     kwargs={
+#         "env_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_cabinet.xarm_workspace_env_cfg:XarmWorkspaceEnvCfg",
+#         "skrl_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_cabinet.agents:skrl_ppo_cfg.yaml",
+#     },
+# )
+# gym.register(
+#     id="Isaac-Xarm-Laptop-Direct-v0",
+#     entry_point="xarm_workspace.tasks.direct.xarm_laptop.xarm_laptop_env:XarmLaptopEnv",
+#     disable_env_checker=True,
+#     kwargs={
+#         "env_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_laptop.xarm_laptop_env_cfg:XarmLaptopEnvCfg",
+#         "skrl_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_laptop.agents:skrl_ppo_cfg.yaml",
+#     },
+# )
+# gym.register(
+#     id="Isaac-Xarm-Station-Direct-v0",
+#     entry_point="xarm_workspace.tasks.direct.xarm_station.xarm_station_env:XarmStationEnv",
+#     disable_env_checker=True,
+#     kwargs={
+#         "env_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_station.xarm_station_env_cfg:XarmStationEnvCfg",
+#         "skrl_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_station.agents:skrl_ppo_cfg.yaml",
+#     },
+# )
+# gym.register(
+#     id="Isaac-Xarm-Pick-Place-Direct-v0",
+#     entry_point="xarm_workspace.tasks.direct.xarm_pick_place.xarm_pick_place_env:XarmPickPlaceEnv",
+#     disable_env_checker=True,
+#     kwargs={
+#         "env_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_pick_place.xarm_pick_place_env_cfg:XarmPickPlaceEnvCfg",
+#         "skrl_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_pick_place.agents:skrl_ppo_cfg.yaml",
+#     },
+# )
+# gym.register(
+#     id="Isaac-Xarm-Station-Fixed-Direct-v0",
+#     entry_point="xarm_workspace.tasks.direct.xarm_station.xarm_station_fixed_env:XarmStationFixedEnv",
+#     disable_env_checker=True,
+#     kwargs={
+#         "env_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_station.xarm_station_fixed_env_cfg:XarmStationFixedEnvCfg",
+#         "skrl_cfg_entry_point": "xarm_workspace.tasks.direct.xarm_station.agents:skrl_ppo_cfg.yaml",
+#     },
+# )
