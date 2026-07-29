@@ -172,7 +172,6 @@ class XarmStationFixedEnvCfg(DirectRLEnvCfg):
 
     # penaltys
     action_penalty_scale = 0.02
-    # overshoot_penalty_scale = 5.0
 
     target_lid_angle = 0.25
 
