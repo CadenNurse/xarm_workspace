@@ -1,8 +1,3 @@
-# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
-# All rights reserved.
-#
-# SPDX-License-Identifier: BSD-3-Clause
-
 from __future__ import annotations
 
 import isaaclab.sim as sim_utils
@@ -17,10 +12,10 @@ from isaaclab.utils.configclass import configclass
 
 @configclass
 class XarmStationStagedEnvCfg(DirectRLEnvCfg):
-    episode_length_s = 7.0
+    episode_length_s = 5.5
     decimation = 2
     action_space = 8
-    observation_space = 31
+    observation_space = 41
     state_space = 0
 
     sim: SimulationCfg = SimulationCfg(
@@ -36,13 +31,13 @@ class XarmStationStagedEnvCfg(DirectRLEnvCfg):
     )
 
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
-        num_envs=100, env_spacing=2.5, replicate_physics=True, clone_in_fabric=True
+        num_envs=121, env_spacing=2.5, replicate_physics=True, clone_in_fabric=True
     )
 
     robot = ArticulationCfg(
         prim_path="/World/envs/env_.*/Robot",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"/home/cadennurse/Documents/isaac_lab_test/L_xarm.usd",
+            usd_path="/home/cadennurse/Documents/isaac_lab_test/L_xarm.usd",
             activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
@@ -91,7 +86,7 @@ class XarmStationStagedEnvCfg(DirectRLEnvCfg):
     laptop = ArticulationCfg(
         prim_path="/World/envs/env_.*/Laptop",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"/home/cadennurse/Documents/isaac_lab_test/thinkpad_x13_gen1_REAL.usd",
+            usd_path="/home/cadennurse/Documents/isaac_lab_test/thinkpad_x13_gen1_REAL.usd",
             activate_contact_sensors=True,
         ),
         init_state=ArticulationCfg.InitialStateCfg(
@@ -113,7 +108,7 @@ class XarmStationStagedEnvCfg(DirectRLEnvCfg):
     workstation = RigidObjectCfg(
         prim_path="/World/envs/env_.*/Workstation",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"/home/cadennurse/Documents/isaac_lab_test/workstation.usd",
+            usd_path="/home/cadennurse/Documents/isaac_lab_test/workstation.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True,
             ),
@@ -144,16 +139,16 @@ class XarmStationStagedEnvCfg(DirectRLEnvCfg):
     close_reward_scale = 18.0
     success_bonus_scale = 70.0
     close_vel_reward_scale = 6.0
-    fast_close_penalty_scale = 4.0
     finger_reach_reward_scale = 3.8
+
+    fast_close_penalty_scale = 4.0
     body_push_penalty_scale = 4.2
     action_penalty_scale = 0.02
 
-    return_home_reward_scale = 10.0
-    return_success_bonus_scale = 50.0
-    retract_steps = 12
-    home_joint_tolerance = 0.15
-    home_reward_k = 3.0
+    return_home_reward_scale = 14.0
+    return_action_penalty_scale = 0.01
+    return_success_bonus_scale = 40.0
+    home_joint_tolerance = 0.18
 
-    target_lid_angle = 0.18
-    success_lid_angle_threshold: float = 0.20
+    target_lid_angle = 0.25
+    success_lid_angle_threshold: float = 0.30

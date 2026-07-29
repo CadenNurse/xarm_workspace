@@ -1,8 +1,3 @@
-# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
-# All rights reserved.
-#
-# SPDX-License-Identifier: BSD-3-Clause
-
 from __future__ import annotations
 
 import torch
@@ -23,8 +18,7 @@ class XarmStationStagedEnv(DirectRLEnv):
     cfg: XarmStationStagedEnvCfg
 
     PHASE_CLOSE = 0
-    PHASE_RETRACT = 1
-    PHASE_RETURN = 2
+    PHASE_RETURN = 1
 
     def __init__(self, cfg: XarmStationStagedEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
@@ -33,7 +27,6 @@ class XarmStationStagedEnv(DirectRLEnv):
             world_transform = xformable.ComputeLocalToWorldTransform(0)
             world_pos = world_transform.ExtractTranslation()
             world_quat = world_transform.ExtractRotationQuat()
-
             px = world_pos[0] - env_pos[0]
             py = world_pos[1] - env_pos[1]
             pz = world_pos[2] - env_pos[2]
@@ -49,19 +42,13 @@ class XarmStationStagedEnv(DirectRLEnv):
             ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7", "drive_joint"]
         )
 
-        self.robot_dof_lower_limits = self._robot.data.soft_joint_pos_limits.torch[
-            0, self.control_joint_ids, 0
-        ].to(self.device)
-        self.robot_dof_upper_limits = self._robot.data.soft_joint_pos_limits.torch[
-            0, self.control_joint_ids, 1
-        ].to(self.device)
-
+        self.robot_dof_lower_limits = self._robot.data.soft_joint_pos_limits.torch[0, self.control_joint_ids, 0].to(self.device)
+        self.robot_dof_upper_limits = self._robot.data.soft_joint_pos_limits.torch[0, self.control_joint_ids, 1].to(self.device)
         self.obs_dof_lower_limits = self._robot.data.soft_joint_pos_limits.torch[0, :, 0].to(self.device)
         self.obs_dof_upper_limits = self._robot.data.soft_joint_pos_limits.torch[0, :, 1].to(self.device)
 
         self.robot_dof_speed_scales = torch.ones_like(self.robot_dof_lower_limits)
         self.robot_dof_speed_scales[-1] = 0.1
-
         self.robot_dof_targets = torch.zeros((self.num_envs, len(self.control_joint_ids)), device=self.device)
 
         stage = get_current_stage()
@@ -84,7 +71,6 @@ class XarmStationStagedEnv(DirectRLEnv):
         finger_pose = torch.zeros(7, device=self.device)
         finger_pose[0:3] = (lfinger_pose[0:3] + rfinger_pose[0:3]) / 2.0
         finger_pose[3:7] = lfinger_pose[3:7]
-
         hand_pose_inv_rot = quat_conjugate(hand_pose[3:7])
         hand_pose_inv_pos = -quat_apply(hand_pose_inv_rot, hand_pose[0:3])
 
@@ -99,19 +85,6 @@ class XarmStationStagedEnv(DirectRLEnv):
         self.lid_local_push_pos = lid_local_push_pose[0:3].repeat((self.num_envs, 1))
         self.lid_local_push_rot = lid_local_push_pose[3:7].repeat((self.num_envs, 1))
 
-        self.gripper_forward_axis = torch.tensor([0, 0, 1], device=self.device, dtype=torch.float32).repeat(
-            (self.num_envs, 1)
-        )
-        self.lid_close_axis = torch.tensor([-1, 0, 0], device=self.device, dtype=torch.float32).repeat(
-            (self.num_envs, 1)
-        )
-        self.gripper_up_axis = torch.tensor([0, 1, 0], device=self.device, dtype=torch.float32).repeat(
-            (self.num_envs, 1)
-        )
-        self.lid_up_axis = torch.tensor([0, 0, 1], device=self.device, dtype=torch.float32).repeat(
-            (self.num_envs, 1)
-        )
-
         self.hand_link_idx = self._robot.find_bodies("link7")[0][0]
         self.left_finger_link_idx = self._robot.find_bodies("left_finger")[0][0]
         self.right_finger_link_idx = self._robot.find_bodies("right_finger")[0][0]
@@ -125,17 +98,16 @@ class XarmStationStagedEnv(DirectRLEnv):
         self.prev_hinge_pos = torch.zeros(self.num_envs, device=self.device)
 
         self._episode_succeeded = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._episode_returned_home = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+
         self.task_phase = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self.home_joint_pos = torch.zeros((self.num_envs, len(self.control_joint_ids)), device=self.device)
-        self.close_step_buf = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
-        self._episode_returned_home = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self.prev_actions = torch.zeros((self.num_envs, len(self.control_joint_ids)), device=self.device)
 
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot)
         self._laptop = Articulation(self.cfg.laptop)
         self._workstation = RigidObject(self.cfg.workstation)
-
         self.scene.articulations["robot"] = self._robot
         self.scene.articulations["laptop"] = self._laptop
         self.scene.rigid_objects["table"] = self._workstation
@@ -145,7 +117,6 @@ class XarmStationStagedEnv(DirectRLEnv):
         self._terrain = self.cfg.terrain.class_type(self.cfg.terrain)
 
         self.scene.clone_environments(copy_from_source=False)
-
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=[self.cfg.terrain.prim_path])
 
@@ -164,11 +135,14 @@ class XarmStationStagedEnv(DirectRLEnv):
         self._compute_intermediate_values()
         self._update_task_phase()
 
+        hinge_pos = self._laptop.data.joint_pos.torch[:, self.hinge_joint_idx]
+        lid_closed = hinge_pos <= self.cfg.success_lid_angle_threshold
         home_err = self._home_joint_error()
-        returned_home = (self.task_phase == self.PHASE_RETURN) & (home_err < self.cfg.home_joint_tolerance)
+        returned_home = (self.task_phase == self.PHASE_RETURN) & lid_closed & (home_err <= self.cfg.home_joint_tolerance)
         self._episode_returned_home |= returned_home
 
-        terminated = returned_home
+        too_early = self.episode_length_buf < 20
+        terminated = returned_home & ~too_early
         truncated = self.episode_length_buf >= self.max_episode_length - 1
         return terminated, truncated
 
@@ -179,54 +153,38 @@ class XarmStationStagedEnv(DirectRLEnv):
         hinge_pos = self._laptop.data.joint_pos.torch[:, self.hinge_joint_idx]
         hinge_vel = self._laptop.data.joint_vel.torch[:, self.hinge_joint_idx]
         hinge_error = torch.abs(hinge_pos - self.cfg.target_lid_angle)
+        lid_closed = hinge_pos <= self.cfg.success_lid_angle_threshold
 
         d = torch.linalg.norm(self.robot_grasp_pos - self.lid_push_pos, dim=-1)
         reach_reward = 1.0 / (1.0 + d * d)
         reach_reward = reach_reward * reach_reward
 
-        close_reward = -hinge_error
-        action_penalty = torch.sum(self.actions ** 2, dim=-1)
-        fast_close_penalty = torch.square(torch.clamp(-hinge_vel, min=0.0))
-
-        success_bonus = torch.where(
-            hinge_pos <= self.cfg.success_lid_angle_threshold,
-            torch.ones_like(hinge_pos),
-            torch.zeros_like(hinge_pos),
-        )
-
-        moving_closed_reward = torch.where(
-            hinge_vel < 0.0,
-            -hinge_vel,
-            torch.zeros_like(hinge_vel),
-        )
-
         lfinger_pos = self._robot.data.body_pos_w.torch[:, self.left_finger_link_idx]
         rfinger_pos = self._robot.data.body_pos_w.torch[:, self.right_finger_link_idx]
-
         lfinger_dist = torch.linalg.norm(lfinger_pos - self.lid_push_pos, dim=-1)
         rfinger_dist = torch.linalg.norm(rfinger_pos - self.lid_push_pos, dim=-1)
-
         finger_mid_pos = 0.5 * (lfinger_pos + rfinger_pos)
         finger_mid_dist = torch.linalg.norm(finger_mid_pos - self.lid_push_pos, dim=-1)
-
         finger_reach_reward = 1.0 / (1.0 + finger_mid_dist * finger_mid_dist)
         finger_reach_reward = finger_reach_reward * finger_reach_reward
 
         body_push_penalty = ((d < 0.05) & ((lfinger_dist > 0.06) | (rfinger_dist > 0.06))).float()
+        action_penalty = torch.sum(self.actions ** 2, dim=-1)
+        fast_close_penalty = torch.square(torch.clamp(-hinge_vel, min=0.0))
+        moving_closed_reward = torch.where(hinge_vel < 0.0, -hinge_vel, torch.zeros_like(hinge_vel))
+        success_bonus = lid_closed.float()
 
         home_err = self._home_joint_error()
-        home_reward = torch.exp(-self.cfg.home_reward_k * home_err)
-        return_success_bonus = (
-            (self.task_phase == self.PHASE_RETURN) & (home_err < self.cfg.home_joint_tolerance)
-        ).float()
+        home_reward = 1.0 / (1.0 + home_err * home_err)
+        home_reward = home_reward * home_reward
+        return_success_bonus = ((self.task_phase == self.PHASE_RETURN) & lid_closed & (home_err <= self.cfg.home_joint_tolerance)).float()
 
-        is_close = (self.task_phase == self.PHASE_CLOSE).float()
-        is_retract = (self.task_phase == self.PHASE_RETRACT).float()
-        is_return = (self.task_phase == self.PHASE_RETURN).float()
+        close_mask = (self.task_phase == self.PHASE_CLOSE).float()
+        return_mask = (self.task_phase == self.PHASE_RETURN).float()
 
-        close_phase_reward = (
+        close_stage_reward = (
             self.cfg.reach_reward_scale * reach_reward
-            + self.cfg.close_reward_scale * close_reward
+            + self.cfg.close_reward_scale * (-hinge_error)
             + self.cfg.close_vel_reward_scale * moving_closed_reward
             + self.cfg.finger_reach_reward_scale * finger_reach_reward
             - self.cfg.body_push_penalty_scale * body_push_penalty
@@ -235,46 +193,34 @@ class XarmStationStagedEnv(DirectRLEnv):
             + self.cfg.success_bonus_scale * success_bonus
         )
 
-        retract_phase_reward = (
-            0.25 * self.cfg.reach_reward_scale * reach_reward
-            - self.cfg.action_penalty_scale * action_penalty
-        )
-
-        return_phase_reward = (
+        return_stage_reward = (
             self.cfg.return_home_reward_scale * home_reward
-            - self.cfg.action_penalty_scale * action_penalty
+            - self.cfg.return_action_penalty_scale * action_penalty
             + self.cfg.return_success_bonus_scale * return_success_bonus
         )
 
-        total_reward = (
-            is_close * close_phase_reward
-            + is_retract * retract_phase_reward
-            + is_return * return_phase_reward
-        )
+        total_reward = close_mask * close_stage_reward + return_mask * return_stage_reward
 
-        self._episode_succeeded |= hinge_pos <= self.cfg.success_lid_angle_threshold
+        self._episode_succeeded |= lid_closed
 
         self.extras["log"] = {
             "hinge_pos": hinge_pos.mean(),
             "hinge_error": hinge_error.mean(),
             "hinge_vel": hinge_vel.mean(),
             "reach_reward": (self.cfg.reach_reward_scale * reach_reward).mean(),
-            "close_reward": (self.cfg.close_reward_scale * close_reward).mean(),
+            "close_reward": (self.cfg.close_reward_scale * (-hinge_error)).mean(),
             "close_vel_reward": (self.cfg.close_vel_reward_scale * moving_closed_reward).mean(),
             "fast_close_penalty": (-self.cfg.fast_close_penalty_scale * fast_close_penalty).mean(),
             "action_penalty": (-self.cfg.action_penalty_scale * action_penalty).mean(),
             "finger_reach_reward": (self.cfg.finger_reach_reward_scale * finger_reach_reward).mean(),
             "body_push_penalty": (-self.cfg.body_push_penalty_scale * body_push_penalty).mean(),
-            "lfinger_dist": lfinger_dist.mean(),
-            "rfinger_dist": rfinger_dist.mean(),
+            "success_bonus": (self.cfg.success_bonus_scale * success_bonus).mean(),
             "home_err": home_err.mean(),
             "home_reward": (self.cfg.return_home_reward_scale * home_reward).mean(),
             "return_success_bonus": (self.cfg.return_success_bonus_scale * return_success_bonus).mean(),
-            "success_bonus": (self.cfg.success_bonus_scale * success_bonus).mean(),
-            "task_phase": self.task_phase.float().mean(),
             "phase_close_frac": (self.task_phase == self.PHASE_CLOSE).float().mean(),
-            "phase_retract_frac": (self.task_phase == self.PHASE_RETRACT).float().mean(),
             "phase_return_frac": (self.task_phase == self.PHASE_RETURN).float().mean(),
+            "returned_home_frac": self._episode_returned_home.float().mean(),
             "total_reward": total_reward.mean(),
         }
 
@@ -285,25 +231,20 @@ class XarmStationStagedEnv(DirectRLEnv):
             env_ids = torch.arange(self.num_envs, device=self.device, dtype=torch.long)
 
         laptop_pos = self._laptop.data.joint_pos.torch[env_ids, self.hinge_joint_idx]
-
         log = self.extras.setdefault("log", {})
         log["Metrics/success_rate"] = self._episode_succeeded[env_ids].float().mean().item()
         log["Metrics/return_home_rate"] = self._episode_returned_home[env_ids].float().mean().item()
         log["Metrics/laptop_pos"] = laptop_pos.mean().item()
         log["Metrics/mean_home_err"] = self._home_joint_error()[env_ids].mean().item()
         log["Metrics/phase_return_frac"] = (self.task_phase[env_ids] == self.PHASE_RETURN).float().mean().item()
-        log["Metrics/phase_retract_frac"] = (self.task_phase[env_ids] == self.PHASE_RETRACT).float().mean().item()
-
+        log["Metrics/phase_close_frac"] = (self.task_phase[env_ids] == self.PHASE_CLOSE).float().mean().item()
         self._episode_succeeded[env_ids] = False
         self._episode_returned_home[env_ids] = False
 
         super()._reset_idx(env_ids)
 
         joint_pos = self._robot.data.default_joint_pos.torch[env_ids][:, self.control_joint_ids] + sample_uniform(
-            -0.125,
-            0.125,
-            (len(env_ids), len(self.control_joint_ids)),
-            self.device,
+            -0.125, 0.125, (len(env_ids), len(self.control_joint_ids)), self.device
         )
         joint_pos = torch.clamp(joint_pos, self.robot_dof_lower_limits, self.robot_dof_upper_limits)
         joint_vel = torch.zeros_like(joint_pos)
@@ -315,34 +256,31 @@ class XarmStationStagedEnv(DirectRLEnv):
 
         self.home_joint_pos[env_ids] = joint_pos
         self.task_phase[env_ids] = self.PHASE_CLOSE
-        self.close_step_buf[env_ids] = 0
 
         laptop_root_pose = self._laptop.data.default_root_state.torch[env_ids, :7].clone()
         laptop_root_pose[:, 0:3] += self.scene.env_origins[env_ids]
         laptop_root_vel = torch.zeros_like(self._laptop.data.default_root_state.torch[env_ids, 7:])
-
         self._laptop.write_root_pose_to_sim(laptop_root_pose, env_ids=env_ids)
         self._laptop.write_root_velocity_to_sim(laptop_root_vel, env_ids=env_ids)
 
         laptop_joint_pos = self._laptop.data.default_joint_pos.torch[env_ids].clone()
         laptop_joint_vel = torch.zeros_like(laptop_joint_pos)
-
         self._laptop.write_joint_position_to_sim_index(position=laptop_joint_pos, env_ids=env_ids)
         self._laptop.write_joint_velocity_to_sim_index(velocity=laptop_joint_vel, env_ids=env_ids)
 
         self.prev_hinge_pos[env_ids] = laptop_joint_pos[:, self.hinge_joint_idx]
         self.prev_actions[env_ids] = 0.0
-
         self._compute_intermediate_values(env_ids)
 
     def _get_observations(self) -> dict:
         dof_pos_scaled = (
-            2.0
-            * (self._robot.data.joint_pos.torch - self.obs_dof_lower_limits)
+            2.0 * (self._robot.data.joint_pos.torch - self.obs_dof_lower_limits)
             / (self.obs_dof_upper_limits - self.obs_dof_lower_limits)
             - 1.0
         )
         to_target = self.lid_push_pos - self.robot_grasp_pos
+        home_delta = self.home_joint_pos - self._robot.data.joint_pos.torch[:, self.control_joint_ids]
+        phase_one_hot = torch.nn.functional.one_hot(self.task_phase, num_classes=2).float()
 
         obs = torch.cat(
             (
@@ -351,6 +289,8 @@ class XarmStationStagedEnv(DirectRLEnv):
                 to_target,
                 self._laptop.data.joint_pos.torch[:, self.hinge_joint_idx].unsqueeze(-1),
                 self._laptop.data.joint_vel.torch[:, self.hinge_joint_idx].unsqueeze(-1),
+                home_delta,
+                phase_one_hot,
             ),
             dim=-1,
         )
@@ -362,14 +302,8 @@ class XarmStationStagedEnv(DirectRLEnv):
 
     def _update_task_phase(self):
         hinge_pos = self._laptop.data.joint_pos.torch[:, self.hinge_joint_idx]
-
         just_closed = (hinge_pos <= self.cfg.success_lid_angle_threshold) & (self.task_phase == self.PHASE_CLOSE)
-        self.task_phase[just_closed] = self.PHASE_RETRACT
-        self.close_step_buf[just_closed] = self.episode_length_buf[just_closed]
-
-        retract_elapsed = self.episode_length_buf - self.close_step_buf
-        retract_done = (self.task_phase == self.PHASE_RETRACT) & (retract_elapsed > self.cfg.retract_steps)
-        self.task_phase[retract_done] = self.PHASE_RETURN
+        self.task_phase[just_closed] = self.PHASE_RETURN
 
     def _compute_intermediate_values(self, env_ids: torch.Tensor | None = None):
         if env_ids is None:
@@ -379,7 +313,6 @@ class XarmStationStagedEnv(DirectRLEnv):
         hand_rot = self._robot.data.body_quat_w.torch[env_ids, self.hand_link_idx]
         laptop_pos = self._laptop.data.body_pos_w.torch[env_ids, self.lid_link_idx]
         laptop_rot = self._laptop.data.body_quat_w.torch[env_ids, self.lid_link_idx]
-
         (
             self.robot_grasp_rot[env_ids],
             self.robot_grasp_pos[env_ids],
@@ -400,18 +333,17 @@ class XarmStationStagedEnv(DirectRLEnv):
         self,
         hand_rot,
         hand_pos,
-        franka_local_grasp_rot,
-        franka_local_grasp_pos,
+        robot_local_grasp_rot,
+        robot_local_grasp_pos,
         laptop_rot,
         laptop_pos,
         lid_local_push_rot,
         lid_local_push_pos,
     ):
-        global_franka_pos, global_franka_rot = combine_frame_transforms(
-            hand_pos, hand_rot, franka_local_grasp_pos, franka_local_grasp_rot
+        global_robot_pos, global_robot_rot = combine_frame_transforms(
+            hand_pos, hand_rot, robot_local_grasp_pos, robot_local_grasp_rot
         )
         global_laptop_pos, global_laptop_rot = combine_frame_transforms(
             laptop_pos, laptop_rot, lid_local_push_pos, lid_local_push_rot
         )
-
-        return global_franka_rot, global_franka_pos, global_laptop_rot, global_laptop_pos
+        return global_robot_rot, global_robot_pos, global_laptop_rot, global_laptop_pos
