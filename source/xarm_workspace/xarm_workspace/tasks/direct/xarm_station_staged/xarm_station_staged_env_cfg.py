@@ -31,7 +31,7 @@ class XarmStationStagedEnvCfg(DirectRLEnvCfg):
     )
 
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
-        num_envs=121, env_spacing=2.5, replicate_physics=True, clone_in_fabric=True
+        num_envs=169, env_spacing=2.5, replicate_physics=True, clone_in_fabric=True
     )
 
     robot = ArticulationCfg(
@@ -90,7 +90,7 @@ class XarmStationStagedEnvCfg(DirectRLEnvCfg):
             activate_contact_sensors=True,
         ),
         init_state=ArticulationCfg.InitialStateCfg(
-            pos=(0.40, 0.80, 0.80),
+            pos=(0.40, 0.70, 0.80),
             rot=(0.0, 0.0, 0.0, 1.0),
             joint_pos={"hinge_joint": 1.4},
         ),
@@ -145,10 +145,10 @@ class XarmStationStagedEnvCfg(DirectRLEnvCfg):
     body_push_penalty_scale = 4.2
     action_penalty_scale = 0.02
 
-    return_home_reward_scale = 14.0
+    return_home_reward_scale = 18.0
     return_action_penalty_scale = 0.01
-    return_success_bonus_scale = 40.0
+    return_success_bonus_scale = 55.0
     home_joint_tolerance = 0.18
 
     target_lid_angle = 0.25
-    success_lid_angle_threshold: float = 0.30
+    success_lid_angle_threshold = 0.35

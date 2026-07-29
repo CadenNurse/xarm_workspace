@@ -176,5 +176,5 @@ class XarmStationFixedEnvCfg(DirectRLEnvCfg):
     target_lid_angle = 0.25
 
     # success criteria
-    success_lid_angle_threshold : float = 0.30
+    success_lid_angle_threshold : float = 0.35
     """laptop joint position below which the lid is considered successfully closed [rads]."""
