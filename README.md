@@ -60,6 +60,52 @@ It allows you to develop in an isolated environment, outside of the core Isaac L
             # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
             python scripts/random_agent.py --task=<TASK_NAME>
             ```
+### Running the included code
+To run the code written for training a policy use the following lines:
+ - Go into your IsaacLab root
+  ```bash
+  cd env_isaaclab
+  source ~/env_isaaclab/bin/activate
+  cd IsaacLab
+  ```
+- To train a policy
+  ```bash
+  # use "train" right after the reinforcement learning package you wish to use
+  ../isaaclab.sh -p xarm_workspace/scripts/skrl/train.py --task Isaac-Xarm-Workspace-Direct-v0 --viz kit
+  ```
+  - To change the task, review the task **id** under "/home/user/env_isaaclab/IsaacLab/xarm_workspace/xarm_workspace/source/xarm_workspace/xarm_workspace/tasks/direct/your_task "
+  - To change the visualization method, the word after "--viz" to either: "omniverse", "newton", "rerun", or the prefered, "kit"
+  - To change the number of environments, use "--num_envs your_number"
+  - See more at: https://isaac-sim.github.io/IsaacLab/release/3.0.0-beta2/source/setup/quickstart_details.html
+
+To view your rewards and progress in real time, use TensorBoard in another terminal
+- Setup TensorBoard to view your policy rewards in real time
+  ```bash
+  # install using pip
+  pip install tensorboard
+  ```
+- To acess your TensorBoard:
+  - Go into your IsaacLab root
+  ```bash
+  cd env_isaaclab
+  source ~/env_isaaclab/bin/activate
+  cd IsaacLab
+  ```
+  - Open up TensorBoard
+  ```bash
+  # to open everything use a general logs runner
+  tensorboard --logdir runs
+  ```
+  - Or use a specific directory for your task
+  ```bash
+  # open up only the logs to do with the laptop closing task
+  tensorboard --logdir /home/user/env_isaaclab/IsaacLab/xarm_workspace/logs/skrl
+  ```
+  
+- Then go to the web and paste the following
+  ```bash
+  http://localhost:6006
+  ```
 
 ### Set up IDE (Optional)
 
