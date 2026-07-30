@@ -47,7 +47,7 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
     robot = ArticulationCfg(
         prim_path="/World/envs/env_.*/Robot",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"/home/cadennurse/Documents/isaac_lab_test/L_xarm.usd",
+            usd_path=f"/xarm_workspace/isaac_lab_test/L_xarm.usd",
             activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
@@ -97,7 +97,7 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
     laptop = ArticulationCfg(
         prim_path="/World/envs/env_.*/Laptop",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"/home/cadennurse/Documents/isaac_lab_test/thinkpad_x13_gen1_REAL.usd",
+            usd_path=f"/xarm_workspace/isaac_lab_test/thinkpad_x13_gen1_REAL.usd",
             activate_contact_sensors=True,
         ),
         init_state=ArticulationCfg.InitialStateCfg(
@@ -120,7 +120,7 @@ class XarmStationEnvCfg(DirectRLEnvCfg):
     workstation = RigidObjectCfg(
         prim_path="/World/envs/env_.*/Workstation",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"/home/cadennurse/Documents/isaac_lab_test/workstation.usd",
+            usd_path=f"/xarm_workspace/isaac_lab_test/workstation.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True,
             ),

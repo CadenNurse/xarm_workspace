@@ -47,7 +47,7 @@ class XarmPickPlaceEnvCfg(DirectRLEnvCfg):
     robot = ArticulationCfg(
         prim_path="/World/envs/env_.*/Robot",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"/home/cadennurse/Documents/isaac_lab_test/L_xarm.usd",
+            usd_path=f"/xarm_workspace/isaac_lab_test/L_xarm.usd",
             activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
@@ -132,8 +132,7 @@ class XarmPickPlaceEnvCfg(DirectRLEnvCfg):
     workstation = RigidObjectCfg(
         prim_path="/World/envs/env_.*/Workstation",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"/home/cadennurse/Documents/isaac_lab_test/workstation.usd",
-            usd_path=f"/home/cadennurse/Documents/isaac_lab_test/workstation.usd",
+            usd_path=f"/xarm_workspace/isaac_lab_test/workstation.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True,
             ),

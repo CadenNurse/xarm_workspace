@@ -47,7 +47,7 @@ class XarmWorkspaceEnvCfg(DirectRLEnvCfg):
     robot = ArticulationCfg(
         prim_path="/World/envs/env_.*/Robot",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"/home/cadennurse/Documents/isaac_lab_test/L_xarm.usd",
+            usd_path=f"/xarm_workspace/isaac_lab_test/L_xarm.usd",
             activate_contact_sensors=False,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
