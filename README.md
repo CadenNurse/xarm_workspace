@@ -74,6 +74,7 @@ To run the code written for training a policy use the following lines:
   ../isaaclab.sh -p xarm_workspace/scripts/skrl/train.py --task Isaac-Xarm-Workspace-Direct-v0 --viz kit
   ```
   - To change the task, review the task **id** under "/home/user/env_isaaclab/IsaacLab/xarm_workspace/xarm_workspace/source/xarm_workspace/xarm_workspace/tasks/direct/your_task "
+    - Replace that id with your new one
   - To change the visualization method, the word after "--viz" to either: "omniverse", "newton", "rerun", or the prefered, "kit"
   - To change the number of environments, use "--num_envs your_number"
   - See more at: https://isaac-sim.github.io/IsaacLab/release/3.0.0-beta2/source/setup/quickstart_details.html
