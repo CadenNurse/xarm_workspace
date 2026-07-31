@@ -14,6 +14,11 @@ from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.configclass import configclass
+from pathlib import Path
+
+_THIS_DIR = Path(__file__).resolve().parent
+_PKG_ROOT = _THIS_DIR.parents[5]
+_ASSET_DIR = _PKG_ROOT / "isaac_lab_test"
 
 
 @configclass
@@ -47,7 +52,7 @@ class XarmWorkspaceEnvCfg(DirectRLEnvCfg):
     robot = ArticulationCfg(
         prim_path="/World/envs/env_.*/Robot",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"/xarm_workspace/isaac_lab_test/L_xarm.usd",
+            usd_path=str(_ASSET_DIR / "L_xarm.usd"),
             activate_contact_sensors=False,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
