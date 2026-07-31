@@ -205,6 +205,8 @@ class XarmWorkspaceEnv(DirectRLEnv):
         return reward
 
     def _reset_idx(self, env_ids: torch.Tensor | None):
+        if env_ids is None:
+            env_ids = torch.arange(self.num_envs, device=self.device, dtype=torch.long)
         # Flush per-episode success (sticky binary: drawer ever opened past the cfg threshold).
         drawer_pos = self._cabinet.data.joint_pos.torch[env_ids, self.drawer_joint_idx]
         log = self.extras.setdefault("log", {})
